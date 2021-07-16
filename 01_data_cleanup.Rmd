@@ -1,0 +1,364 @@
+---
+title: "Clean Data"
+output: html_notebook
+---
+
+
+```{r Set up}
+#Read in the data
+
+controls <- read.csv("../AIDA/Making_Cohorts/Normals_Cohort/Normals_Cohort_OASIS_DIAN_2019-02-11_with_supra.csv")
+
+pcad <- read.csv("../AIDA/Making_Cohorts/Preclinical_AD/oasis_nonILP_PCAD_list_by_dx_2020-06-02.csv")
+
+expression_data <- read.table(file = "data-raw/AllenHBA_DK_ExpressionMatrix.tsv", sep = '\t', header = TRUE)
+
+myelin <- read.csv("data-raw/Benzinger1071MSMAllMyelinAparc.csv", header = F, col.names = c("region", "myelin"), quote = "'") #original data from Matt
+myelin_updated <- read.csv("data-raw/BenzingerMSMAllMyelinAparcOldNew.csv", header = T, col.names = c("region", "myelin_old", "myelin"), quote = "'") #updated but unpublished data from Matt
+
+
+```
+
+```{r Clean Imaging data}
+#clean controls
+controls$AD_status <- 0
+
+controls$Cent_fSUVR_rsf_TOT_CORTMEAN <- NA
+controls[controls$source=="OASIS" & controls$tracer=="PIB",]$Cent_fSUVR_rsf_TOT_CORTMEAN <-   45*controls[controls$source=="OASIS" & controls$tracer=="PIB",]$PET_fSUVR_rsf_TOT_CORTMEAN - 47.5 
+controls[controls$source=="DIAN" & controls$tracer=="PIB",]$Cent_fSUVR_rsf_TOT_CORTMEAN <- 40.7*controls[controls$source=="DIAN" & controls$tracer=="PIB",]$PET_fSUVR_rsf_TOT_CORTMEAN - 42.9
+controls[controls$tracer=="AV45",]$Cent_fSUVR_rsf_TOT_CORTMEAN <-   53.6*controls[controls$tracer=="AV45",]$PET_fSUVR_rsf_TOT_CORTMEAN - 43.2 
+
+controls$cdr_long <- NA
+
+
+#clean PCAD
+pcad <- pcad[pcad$AD_status==2,]
+pcad$AD_status <- 1
+pcad$visit <- NA
+pcad$DIAN_ID <- NA
+
+pcad[pcad$Sex==1,]$Sex <- "M"
+pcad[pcad$Sex==0 ,]$Sex <- "F"
+
+pcad <- pcad[pcad$Age>60,]
+
+
+#convert SUVRs to centiloid
+pcad$Cent_fSUVR_rsf_TOT_CORTMEAN <- NA
+pcad[pcad$tracer=="PIB",]$Cent_fSUVR_rsf_TOT_CORTMEAN <-   45*pcad[pcad$tracer=="PIB",]$PET_fSUVR_rsf_TOT_CORTMEAN - 47.5 
+pcad[pcad$tracer=="AV45",]$Cent_fSUVR_rsf_TOT_CORTMEAN <-   53.6*pcad[pcad$tracer=="AV45",]$PET_fSUVR_rsf_TOT_CORTMEAN - 43.2 
+
+
+
+
+#merge controls and pcad
+merged <- rbind(pcad, controls)
+
+
+
+merged$apoe4 <- NA
+merged[merged$apoe=="44" | merged$apoe=="34",]$apoe4 <- 1
+merged[merged$apoe!="44" & merged$apoe!="34",]$apoe4 <- 0
+
+
+########################## ICV Correction ########################
+#separate volume and thickness measurements, for 'patient' we're only looking at those within merged age range (would include partially if also
+# interested in graphing them)
+merged_thickness <- merged[grep("thickness", names(merged), value=FALSE, ignore.case=T)]
+merged_volume <- merged[grep("thickness", names(merged), value=FALSE, invert=TRUE, ignore.case=T)]
+
+merged_demo <- subset(merged, select= c(CLINICALDATA.ID, Subject, cdr, mmse, apoe, apoe4, FS_FSDATA.ID, PUP_PUPTIMECOURSEDATA.ID, tracer,
+                                        Cent_fSUVR_rsf_TOT_CORTMEAN, PET_fSUVR_rsf_TOT_CORTMEAN, MR_Session_Label, Scanner,
+                                        Age, version, Race, Ethnicity, Education, Sex, source, visit, DIAN_ID, cdr_long))
+
+
+#remove extra columns from volumes that aren't volumes
+merged_volume <- subset(merged_volume, select= -c(CLINICALDATA.ID, Subject, cdr, mmse, apoe, apoe4, FS_FSDATA.ID, PUP_PUPTIMECOURSEDATA.ID, tracer,
+                                                  Cent_fSUVR_rsf_TOT_CORTMEAN, PET_fSUVR_rsf_TOT_CORTMEAN, MR_Session_Label, Scanner,
+                                                  Age, version, Race, Ethnicity, Education, Sex, source, visit, DIAN_ID, cdr_long))
+
+
+
+#Make subset of the data we're going to correct for head size  
+merged_corrected  <- subset(merged_volume, select= -c(AD_status, IntraCranialVol, WM.hypointensities_volume, non.WM.hypointensities_volume))
+
+
+#Correct for head volume size
+for (i in colnames(merged_corrected)) { #length(merged_corrected)
+  Reg <- lm(as.matrix(merged_corrected[i]) ~ as.matrix(merged$IntraCranialVol))
+  merged_corrected[i] <- data.frame( as.matrix(merged_corrected[i]) - Reg$coefficients[2]*(merged$IntraCranialVol - mean(merged$IntraCranialVol, na.rm = TRUE) ))
+}
+
+#add back in those didn't ICV correct
+merged_corrected$AD_status <- merged_volume$AD_status
+merged_corrected$IntraCranialVol <- merged_volume$IntraCranialVol
+merged_corrected$non.WM.hypointensities_volume <- merged$non.WM.hypointensities_volume
+merged_corrected$WM.hypointensities_volume <- merged$WM.hypointensities_volume
+
+
+#dataframe to hold laterality info
+lateral <- matrix()  
+
+
+#Combine Hemispheres
+
+#####Sum the Volumes#####
+#combine regions that are left/right in merged
+comb_data <- matrix()  
+for (i in colnames(merged_corrected)) {
+  
+  region <- i
+  if (grepl("^lh_", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "lh_", fixed=FALSE))))[,2])
+    regionb <- paste("rh_", region, sep="")
+  }
+  
+  if (grepl("^rh_", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "rh_", fixed=FALSE))))[,2])
+    regionb <- paste("lh_", region, sep="")
+  }
+  if (grepl("^lh", i) == TRUE & grepl("lh_", i) == FALSE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "lh", fixed=FALSE))))[,2])
+    regionb <- paste("rh", region, sep="")
+  }
+  if (grepl("^rh", i) == TRUE & grepl("rh_", i) == FALSE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "rh", fixed=FALSE))))[,2])
+    regionb <- paste("lh", region, sep="")
+  }
+  if (grepl("^Left[:.:]", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "Left.", fixed=FALSE))))[,2])
+    regionb <- paste("Right.", region, sep="")
+  }
+  if (grepl("^Right[:.:]", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "Right.", fixed=FALSE))))[,2])
+    regionb <- paste("Left.", region, sep="")
+  }
+  if (grepl("^Left[:_:]", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "Left_", fixed=FALSE))))[,2])
+    regionb <- paste("Right_", region, sep="")
+  }
+  if (grepl("^Right[:_:]", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "Right_", fixed=FALSE))))[,2])
+    regionb <- paste("Left_", region, sep="")
+  }
+  if (grepl("^L[:.:]", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "L.", fixed=FALSE))))[,2])
+    regionb <- paste("R.", region, sep="")
+  }
+  if (grepl("^R[:.:]", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "R.", fixed=FALSE))))[,2])
+    regionb <- paste("L.", region, sep="")
+  }
+  
+  
+  if (region %in% colnames(merged_corrected)) {
+    comb_data <- c(comb_data, merged_corrected[region]) #if already have a combined region included, add that
+  }else{
+    comb_data[region] <- merged_corrected[i] + merged_corrected[regionb]  #if don't already have a combined region, make one and add
+    lateral[region] <- 2*(merged_corrected[i] - merged_corrected[regionb]) / (merged_corrected[i] + merged_corrected[regionb])
+  }
+  
+}
+comb_data <- data.frame(comb_data, check.names = FALSE) 
+comb_data <- comb_data[, !duplicated(colnames(comb_data))] #remove duplicates from comb_data
+merged_corrected <- comb_data[-1]
+
+
+
+##### Average the thicknesses#####
+comb_data <- matrix() 
+for (i in colnames(merged_thickness)) {
+  
+  region <- i
+  if (grepl("^lh_", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "lh_", fixed=FALSE))))[,2])
+    regionb <- paste("rh_", region, sep="")
+  }
+  
+  if (grepl("^rh_", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "rh_", fixed=FALSE))))[,2])
+    regionb <- paste("lh_", region, sep="")
+  }
+  if (grepl("^lh", i) == TRUE & grepl("lh_", i) == FALSE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "lh", fixed=FALSE))))[,2])
+    regionb <- paste("rh", region, sep="")
+  }
+  if (grepl("^rh", i) == TRUE & grepl("rh_", i) == FALSE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "rh", fixed=FALSE))))[,2])
+    regionb <- paste("lh", region, sep="")
+  }
+  if (grepl("^Left[:.:]", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "Left.", fixed=FALSE))))[,2])
+    regionb <- paste("Right.", region, sep="")
+  }
+  if (grepl("^Right[:.:]", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "Right.", fixed=FALSE))))[,2])
+    regionb <- paste("Left.", region, sep="")
+  }
+  if (grepl("^Left[:_:]", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "Left_", fixed=FALSE))))[,2])
+    regionb <- paste("Right_", region, sep="")
+  }
+  if (grepl("^Right[:_:]", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "Right_", fixed=FALSE))))[,2])
+    regionb <- paste("Left_", region, sep="")
+  }
+  if (grepl("^L[:.:]", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "L.", fixed=FALSE))))[,2])
+    regionb <- paste("R.", region, sep="")
+  }
+  if (grepl("^R[:.:]", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "R.", fixed=FALSE))))[,2])
+    regionb <- paste("L.", region, sep="")
+  }
+  
+  
+  if (region %in% colnames(merged_thickness)) {
+    comb_data <- c(comb_data, merged_thickness[region]) #if already have a combined region included, add that
+  }else{
+    comb_data[region] <- (merged_thickness[i] + merged_thickness[regionb])/2  #if don't already have a combined region, make one and add
+    lateral[region] <- 2*(merged_thickness[i] - merged_thickness[regionb]) / (merged_thickness[i] + merged_thickness[regionb])
+
+  }
+  
+}
+comb_data <- data.frame(comb_data, check.names = FALSE) 
+comb_data <- comb_data[, !duplicated(colnames(comb_data))] #remove duplicates from comb_data - since redoes L and R
+merged_thickness <- comb_data[-1]
+
+lateral <- data.frame(lateral[-1])
+
+#combine thicknesses and volumes
+merged_new  <- data.frame(merged_demo, merged_corrected, merged_thickness)
+lateral <- data.frame(merged_demo, AD_status=(merged_corrected$AD_status), lateral)
+
+
+write.csv(merged_new, file = paste("data-clean/clean_Normal_Aging_and_PCAD_cohorts_", Sys.Date(), ".csv", sep=""), row.names = F)
+
+write.csv(lateral, file = paste("data-clean/clean_LATERALITY_Normal_Aging_and_PCAD_cohorts_", Sys.Date(), ".csv", sep=""), row.names = F)
+
+
+```
+
+
+```{r Clean Allen Brain Atlas Data}
+
+#average thicknesses
+comb_data <- matrix() 
+for (i in colnames(expression_data)) {
+  
+  region <- i
+  
+  if (grepl("lh\\.", i) == TRUE ){
+    region <- sub("ctx\\.lh\\.", "", i, ignore.case = FALSE, perl = FALSE, fixed = FALSE, useBytes = FALSE)
+    regiona <- i
+    regionb <- sub("lh\\.", "rh\\.", i, ignore.case = FALSE, perl = FALSE, fixed = FALSE, useBytes = FALSE)
+  }
+  if (grepl("rh\\.", i) == TRUE){
+    region <- sub("ctx\\.rh\\.", "", i, ignore.case = FALSE, perl = FALSE, fixed = FALSE, useBytes = FALSE)
+    regiona <- sub("rh\\.", "lh\\.", i, ignore.case = FALSE, perl = FALSE, fixed = FALSE, useBytes = FALSE)
+    regionb <- i
+  }
+  if (region %in% colnames(expression_data)) {
+    comb_data <- c(comb_data, expression_data[region]) #if already have a combined region included, add that
+  }else{
+    comb_data[region] <- (expression_data[regiona] + expression_data[regionb])/2  #if don't already have a combined region, make one and add
+  }
+  
+}
+comb_data <- data.frame(comb_data, check.names = FALSE) 
+comb_data <- comb_data[, !duplicated(colnames(comb_data))] #remove duplicates from comb_data - since redoes L and R
+expression_data <- comb_data[-1]
+
+
+write.csv(expression_data, file = paste("data-clean/clean_expression_data_", Sys.Date(), ".csv", sep=""))
+
+```
+
+
+
+```{r Clean Myelin data}
+
+myelin <- data.frame(row.names = myelin$region, myelin=myelin$myelin)
+rownames(myelin)[1] <- "L_bankssts"
+
+myelin <- data.frame(t(myelin))
+
+comb_data <- matrix() 
+for (i in colnames(myelin)) {
+  
+  region <- i
+  if (grepl("^L_", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "L_", fixed=FALSE))))[,2])
+    regionb <- paste("R_", region, sep="")
+  }
+  
+  if (grepl("^R_", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "R_", fixed=FALSE))))[,2])
+    regionb <- paste("L_", region, sep="")
+  }
+  
+  if (region %in% colnames(myelin)) {
+    comb_data <- c(comb_data, myelin[region]) #if already have a combined region included, add that
+  }else{
+    comb_data[region] <- (myelin[i] + myelin[regionb])/2  #if don't already have a combined region, make one and add
+  }
+  
+}
+comb_data <- data.frame(comb_data, check.names = FALSE) 
+comb_data <- comb_data[, !duplicated(colnames(comb_data))] #remove duplicates from comb_data - since redoes L and R
+myelin <- comb_data[-1]
+
+
+myelin$corpuscallosum <- NULL
+
+myelin <- data.frame(myelin = t(myelin))
+
+write.csv(myelin, file = paste("data-clean/clean_myelin_", Sys.Date(), ".csv", sep=""))
+
+
+```
+
+
+```{r Clean Updated Myelin data}
+
+myelin_updated <- myelin_updated[,c(1,3)]
+myelin_updated <- data.frame(row.names = myelin_updated$region, myelin=myelin_updated$myelin)
+
+myelin_updated <- data.frame(t(myelin_updated))
+
+comb_data <- matrix() 
+for (i in colnames(myelin_updated)) {
+  
+  region <- i
+  if (grepl("^L_", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "L_", fixed=FALSE))))[,2])
+    regionb <- paste("R_", region, sep="")
+  }
+  
+  if (grepl("^R_", i) == TRUE){
+    region <- as.character(data.frame(t(data.frame(strsplit(as.character(i), "R_", fixed=FALSE))))[,2])
+    regionb <- paste("L_", region, sep="")
+  }
+  
+  if (region %in% colnames(myelin_updated)) {
+    comb_data <- c(comb_data, myelin_updated[region]) #if already have a combined region included, add that
+  }else{
+    comb_data[region] <- (myelin_updated[i] + myelin_updated[regionb])/2  #if don't already have a combined region, make one and add
+  }
+  
+}
+comb_data <- data.frame(comb_data, check.names = FALSE) 
+comb_data <- comb_data[, !duplicated(colnames(comb_data))] #remove duplicates from comb_data - since redoes L and R
+myelin_updated <- comb_data[-1]
+
+
+myelin_updated$corpuscallosum <- NULL
+
+myelin_updated <- data.frame(myelin = t(myelin_updated))
+
+write.csv(myelin_updated, file = paste("data-clean/clean_updated_myelin_", Sys.Date(), ".csv", sep=""))
+
+
+```
+

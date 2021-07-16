@@ -1,0 +1,941 @@
+---
+title: "Normal Aging Figures"
+output: 
+  word_document
+---
+
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE,
+	dpi = 1000
+)
+```
+
+
+```{r Load and Clean Up Data}
+#Load the R packages necessary for rest of script
+packages <- c("cowplot", "ggseg", "ggplot2", "ggrepel")
+for( i in packages ){
+  #  require returns TRUE invisibly if it was able to load package
+  if( ! require( i , character.only = TRUE ) ){
+    #  If package was not able to be loaded then re-install
+    if(i =="ggseg") {
+      source("https://neuroconductor.org/neurocLite.R")
+      neuro_install('ggseg')
+      library('ggseg')
+    }else{
+        install.packages( i , dependencies = TRUE )
+         #  Load package after installing
+          require( i , character.only = TRUE )
+      }
+    }
+}
+
+#load data
+merged_new <- read.csv("data-clean/clean_Normal_Aging_and_PCAD_cohorts_2020-06-02.csv")
+slopes <- read.csv("data-clean/NormalAgingCohort_Slopes_2020-05-16.csv")
+
+results <-  read.csv("data-clean/Aging_analyses_results_2021-03-17.csv")
+
+myelin <- read.csv("data-clean/clean_myelin_2020-05-16.csv")
+#myelin <- read.csv("data-clean/clean_updated_myelin_2020-07-04.csv") # updated but unpublished myelin data
+row.names(myelin) <- myelin$X
+
+#### Prepare Results for figures
+
+#separate out normal aging cohort
+normals <- merged_new[merged_new$AD_status==0,]
+
+
+
+#For figures, flip linear model beta values for those that it makes sense for
+
+#reverse values for making images
+reverse <- c("Lateral.Ventricle_volume", "choroid.plexus_volume" , "CSF_volume", "Inf.Lat.Vent_volume", "non.WM.hypointensities_volume", "Optic.Chiasm_volume", "Ventricle_Cerebrum_Ratio", "vessel_volume", "WM.hypointensities_volume", "X3rd.Ventricle_volume", "X4th.Ventricle_volume", "X5th.Ventricle_volume"  )
+
+
+results_adjusted <- results[,1:(length(results)-1) ]
+
+#change p-values so stops at 0.002
+results_adjusted[is.numeric(results_adjusted) & results_adjusted>0.002] <- 0.002
+results_adjusted$Age_beta <- results$Age_beta
+results_adjusted$slope_beta <- results$slope_beta
+results_adjusted$region_type <- results$region_type
+
+
+#flip linear model beta values where it makes sense
+results_adjusted[ row.names(results_adjusted) %in% reverse,]$Age_beta <- -1*results_adjusted[ row.names(results_adjusted) %in% reverse,]$Age_beta
+results_adjusted[ row.names(results_adjusted) %in% reverse,]$slope_beta <- -1*results_adjusted[ row.names(results_adjusted) %in% reverse,]$slope_beta
+
+
+#mask non-significant linear model betas?
+#results_adjusted$Age_beta[results$Age_p>0.0005] <- NA
+#results_adjusted$slope_beta[results$slope_p>0.0005] <- NA
+
+#Change names in results_adjusted to match GGSEG requirements for graphing
+thicknesses <- results_adjusted[results$region_type=="T",]
+volumes <- results_adjusted[results$region_type=="CV",]
+subcort <- results_adjusted[results$region_type=="SV",]
+
+#renaming thicknesses so ggseg will take as input
+rownames(thicknesses)[rownames(thicknesses) == "bankssts_thickness"] <-  "banks superior temporal"
+rownames(thicknesses)[rownames(thicknesses) == "caudalanteriorcingulate_thickness"] <-  "caudal anterior cingulate"
+rownames(thicknesses)[rownames(thicknesses) == "caudalmiddlefrontal_thickness"] <-  "caudal middle frontal"
+rownames(thicknesses)[rownames(thicknesses) == "cuneus_thickness"] <-  "cuneus"
+rownames(thicknesses)[rownames(thicknesses) == "entorhinal_thickness"] <-  "entorhinal"
+rownames(thicknesses)[rownames(thicknesses) == "frontalpole_thickness"] <-  "frontal pole"
+rownames(thicknesses)[rownames(thicknesses) == "fusiform_thickness"] <-  "fusiform"
+rownames(thicknesses)[rownames(thicknesses) == "inferiorparietal_thickness"] <-  "inferior parietal"
+rownames(thicknesses)[rownames(thicknesses) == "inferiortemporal_thickness"] <-  "inferior temporal"
+rownames(thicknesses)[rownames(thicknesses) == "insula_thickness"] <-  "insula"
+rownames(thicknesses)[rownames(thicknesses) == "isthmuscingulate_thickness"] <-  "isthmus cingulate"
+rownames(thicknesses)[rownames(thicknesses) == "lateraloccipital_thickness"] <-  "lateral occipital"
+rownames(thicknesses)[rownames(thicknesses) == "lateralorbitofrontal_thickness"] <-  "lateral orbitofrontal"
+rownames(thicknesses)[rownames(thicknesses) == "lingual_thickness"] <-  "lingual"
+rownames(thicknesses)[rownames(thicknesses) == "medialorbitofrontal_thickness"] <-  "medial orbito frontal"
+rownames(thicknesses)[rownames(thicknesses) == "middletemporal_thickness"] <-  "middle temporal"
+rownames(thicknesses)[rownames(thicknesses) == "paracentral_thickness"] <-  "para central"
+rownames(thicknesses)[rownames(thicknesses) == "parahippocampal_thickness"] <-  "parahippocampal"
+rownames(thicknesses)[rownames(thicknesses) == "parsopercularis_thickness"] <-  "pars opercularis"
+rownames(thicknesses)[rownames(thicknesses) == "parsorbitalis_thickness"] <-  "pars orbitalis"
+rownames(thicknesses)[rownames(thicknesses) == "parstriangularis_thickness"] <-  "pars triangularis"
+rownames(thicknesses)[rownames(thicknesses) == "pericalcarine_thickness"] <-  "pericalcarine"
+rownames(thicknesses)[rownames(thicknesses) == "postcentral_thickness"] <-  "post central"
+rownames(thicknesses)[rownames(thicknesses) == "posteriorcingulate_thickness"] <-  "posterior cingulate"
+rownames(thicknesses)[rownames(thicknesses) == "precentral_thickness"] <-  "pre central"
+rownames(thicknesses)[rownames(thicknesses) == "precuneus_thickness"] <-  "precuneus"
+rownames(thicknesses)[rownames(thicknesses) == "rostralanteriorcingulate_thickness"] <-  "rostral anterior cingulate"
+rownames(thicknesses)[rownames(thicknesses) == "rostralmiddlefrontal_thickness"] <-  "rostral middle frontal"
+rownames(thicknesses)[rownames(thicknesses) == "superiorfrontal_thickness"] <-  "superior frontal"
+rownames(thicknesses)[rownames(thicknesses) == "superiorparietal_thickness"] <-  "superior parietal"
+rownames(thicknesses)[rownames(thicknesses) == "superiortemporal_thickness"] <-  "superior temporal"
+rownames(thicknesses)[rownames(thicknesses) == "supramarginal_thickness"] <-  "supramarginal"
+rownames(thicknesses)[rownames(thicknesses) == "temporalpole_thickness"] <-  "temporal pole"
+rownames(thicknesses)[rownames(thicknesses) == "transversetemporal_thickness"] <-  "transverse temporal"
+
+#renaming volumes
+rownames(volumes)[rownames(volumes) == "bankssts_volume"] <-  "banks superior temporal"
+rownames(volumes)[rownames(volumes) == "caudalanteriorcingulate_volume"] <-  "caudal anterior cingulate"
+rownames(volumes)[rownames(volumes) == "caudalmiddlefrontal_volume"] <-  "caudal middle frontal"
+rownames(volumes)[rownames(volumes) == "cuneus_volume"] <-  "cuneus"
+rownames(volumes)[rownames(volumes) == "entorhinal_volume"] <-  "entorhinal"
+rownames(volumes)[rownames(volumes) == "frontalpole_volume"] <-  "frontal pole"
+rownames(volumes)[rownames(volumes) == "fusiform_volume"] <-  "fusiform"
+rownames(volumes)[rownames(volumes) == "inferiorparietal_volume"] <-  "inferior parietal"
+rownames(volumes)[rownames(volumes) == "inferiortemporal_volume"] <-  "inferior temporal"
+rownames(volumes)[rownames(volumes) == "insula_volume"] <-  "insula"
+rownames(volumes)[rownames(volumes) == "isthmuscingulate_volume"] <-  "isthmus cingulate"
+rownames(volumes)[rownames(volumes) == "lateraloccipital_volume"] <-  "lateral occipital"
+rownames(volumes)[rownames(volumes) == "lateralorbitofrontal_volume"] <-  "lateral orbitofrontal"
+rownames(volumes)[rownames(volumes) == "lingual_volume"] <-  "lingual"
+rownames(volumes)[rownames(volumes) == "medialorbitofrontal_volume"] <-  "medial orbito frontal"
+rownames(volumes)[rownames(volumes) == "middletemporal_volume"] <-  "middle temporal"
+rownames(volumes)[rownames(volumes) == "paracentral_volume"] <-  "para central"
+rownames(volumes)[rownames(volumes) == "parahippocampal_volume"] <-  "parahippocampal"
+rownames(volumes)[rownames(volumes) == "parsopercularis_volume"] <-  "pars opercularis"
+rownames(volumes)[rownames(volumes) == "parsorbitalis_volume"] <-  "pars orbitalis"
+rownames(volumes)[rownames(volumes) == "parstriangularis_volume"] <-  "pars triangularis"
+rownames(volumes)[rownames(volumes) == "pericalcarine_volume"] <-  "pericalcarine"
+rownames(volumes)[rownames(volumes) == "postcentral_volume"] <-  "post central"
+rownames(volumes)[rownames(volumes) == "posteriorcingulate_volume"] <-  "posterior cingulate"
+rownames(volumes)[rownames(volumes) == "precentral_volume"] <-  "pre central"
+rownames(volumes)[rownames(volumes) == "precuneus_volume"] <-  "precuneus"
+rownames(volumes)[rownames(volumes) == "rostralanteriorcingulate_volume"] <-  "rostral anterior cingulate"
+rownames(volumes)[rownames(volumes) == "rostralmiddlefrontal_volume"] <-  "rostral middle frontal"
+rownames(volumes)[rownames(volumes) == "superiorfrontal_volume"] <-  "superior frontal"
+rownames(volumes)[rownames(volumes) == "superiorparietal_volume"] <-  "superior parietal"
+rownames(volumes)[rownames(volumes) == "superiortemporal_volume"] <-  "superior temporal"
+rownames(volumes)[rownames(volumes) == "supramarginal_volume"] <-  "supramarginal"
+rownames(volumes)[rownames(volumes) == "temporalpole_volume"] <-  "temporal pole"
+rownames(volumes)[rownames(volumes) == "transversetemporal_volume"] <-  "transverse temporal"
+
+#change rownames for aseg
+rownames(subcort)[rownames(subcort) == "Thalamus.Proper_volume"] <-  "thalamus proper"
+rownames(subcort)[rownames(subcort) == "Lateral.Ventricle_volume"] <-  "lateral ventricle"
+rownames(subcort)[rownames(subcort) == "Hippocampus_volume"] <-  "hippocampus"
+rownames(subcort)[rownames(subcort) == "Putamen_volume"] <-  "putamen"
+rownames(subcort)[rownames(subcort) == "Amygdala_volume"] <-  "amygdala"
+rownames(subcort)[rownames(subcort) == "VentralDC_volume"] <-  "ventral DC"
+rownames(subcort)[rownames(subcort) == "Pallidum_volume"] <-  "pallidum"
+rownames(subcort)[rownames(subcort) == "Caudate_volume"] <-  "caudate"
+
+#renaming myelin so ggseg will take as input
+rownames(myelin)[rownames(myelin) == "bankssts"] <-  "banks superior temporal"
+rownames(myelin)[rownames(myelin) == "caudalanteriorcingulate"] <-  "caudal anterior cingulate"
+rownames(myelin)[rownames(myelin) == "caudalmiddlefrontal"] <-  "caudal middle frontal"
+rownames(myelin)[rownames(myelin) == "cuneus"] <-  "cuneus"
+rownames(myelin)[rownames(myelin) == "entorhinal"] <-  "entorhinal"
+rownames(myelin)[rownames(myelin) == "frontalpole"] <-  "frontal pole"
+rownames(myelin)[rownames(myelin) == "fusiform"] <-  "fusiform"
+rownames(myelin)[rownames(myelin) == "inferiorparietal"] <-  "inferior parietal"
+rownames(myelin)[rownames(myelin) == "inferiortemporal"] <-  "inferior temporal"
+rownames(myelin)[rownames(myelin) == "insula"] <-  "insula"
+rownames(myelin)[rownames(myelin) == "isthmuscingulate"] <-  "isthmus cingulate"
+rownames(myelin)[rownames(myelin) == "lateraloccipital"] <-  "lateral occipital"
+rownames(myelin)[rownames(myelin) == "lateralorbitofrontal"] <-  "lateral orbitofrontal"
+rownames(myelin)[rownames(myelin) == "lingual"] <-  "lingual"
+rownames(myelin)[rownames(myelin) == "medialorbitofrontal"] <-  "medial orbito frontal"
+rownames(myelin)[rownames(myelin) == "middletemporal"] <-  "middle temporal"
+rownames(myelin)[rownames(myelin) == "paracentral"] <-  "para central"
+rownames(myelin)[rownames(myelin) == "parahippocampal"] <-  "parahippocampal"
+rownames(myelin)[rownames(myelin) == "parsopercularis"] <-  "pars opercularis"
+rownames(myelin)[rownames(myelin) == "parsorbitalis"] <-  "pars orbitalis"
+rownames(myelin)[rownames(myelin) == "parstriangularis"] <-  "pars triangularis"
+rownames(myelin)[rownames(myelin) == "pericalcarine"] <-  "pericalcarine"
+rownames(myelin)[rownames(myelin) == "postcentral"] <-  "post central"
+rownames(myelin)[rownames(myelin) == "posteriorcingulate"] <-  "posterior cingulate"
+rownames(myelin)[rownames(myelin) == "precentral"] <-  "pre central"
+rownames(myelin)[rownames(myelin) == "precuneus"] <-  "precuneus"
+rownames(myelin)[rownames(myelin) == "rostralanteriorcingulate"] <-  "rostral anterior cingulate"
+rownames(myelin)[rownames(myelin) == "rostralmiddlefrontal"] <-  "rostral middle frontal"
+rownames(myelin)[rownames(myelin) == "superiorfrontal"] <-  "superior frontal"
+rownames(myelin)[rownames(myelin) == "superiorparietal"] <-  "superior parietal"
+rownames(myelin)[rownames(myelin) == "superiortemporal"] <-  "superior temporal"
+rownames(myelin)[rownames(myelin) == "supramarginal"] <-  "supramarginal"
+rownames(myelin)[rownames(myelin) == "temporalpole"] <-  "temporal pole"
+rownames(myelin)[rownames(myelin) == "transversetemporal"] <-  "transverse temporal"
+
+
+#sort all so in same order
+volumes <- volumes[order(row.names(volumes)),]
+thicknesses <- thicknesses[order(row.names(thicknesses)),]
+subcort <- subcort[order(row.names(subcort)),]
+myelin <- myelin[sort(row.names(myelin)),]
+myelin$X <- NULL
+
+```
+
+
+
+```{r Normal Aging curves, fig.height=6, fig.width=12}
+
+example_regions <- c("isthmuscingulate_thickness", "entorhinal_volume","Hippocampus_volume", "posteriorcingulate_thickness" )
+example_regions_titles <- c("Isthmus Cingulate Thickness", "Entorhinal Volume", "Hippocampal Volume", "Posterior Cingulate Thickness")
+
+
+#ggplot2 options
+options <- theme(axis.text.x=element_text(size=16),
+                 axis.text.y=element_text(size=16),
+                 axis.title.x=element_text(size=16,face="bold"),
+                 axis.title.y=element_text(size=16,angle=90,face="bold"),
+                 legend.text=element_text(size=16),
+                 legend.title=element_blank(),
+                 legend.position= c(0.27, 0.11),
+                 legend.title.align=0.5,
+                 plot.title=element_text(size=18,face="bold",hjust = 0.5),
+                 plot.subtitle=element_text(size=16),
+                 plot.margin = unit(c(2,3,1,1), "lines") )
+
+
+  
+  #Set normals data's min and max ages
+  n_min <- ceiling(min(normals$Age, na.rm = TRUE))
+  n_max <- floor(max(normals$Age, na.rm = TRUE))
+  #set x-axis 
+  x_min <- n_min - 1
+  x_max <- n_max
+  region_customX <- scale_x_continuous(limits=c(n_min, n_max), breaks=(seq(from = (10*floor(x_min/10)), to = 10*ceiling(x_max/10), by = 10)))
+        
+  region_xlabel <- xlab("Age") #x label, doesn't change
+
+  
+  
+  #make dataframe to store all data
+  normal_aging_means <- data.frame(Age=c(n_min:n_max))
+  normal_aging_sd <- data.frame(Age=c(n_min:n_max))
+ 
+  #set legend labels - do not mess with, reorders labels without clear cause  
+  legend  <- scale_colour_manual(name="", labels=c("Normals"="LOESS Smoothed Average", "Points"="Individual Participants", "Lin Reg"="Linear Regression"),  values = c("Normals"="red3", "Points"="black", "Lin Reg"="blue"))  
+        
+
+   
+
+
+
+
+
+
+######### Isthmuscingulate thickness ########
+#Smooth population data with loess
+smoothFit <- loess( normals$isthmuscingulate_thickness ~ normals$Age, degree=1, span=0.7 ) #locally fits a polynomial surface
+smoothPred <- predict( smoothFit, newdata=n_min:n_max, se=TRUE ) #uses loess fit to predict data for each age
+stand_dev2 <- matrix()
+for (i in 1:length(n_min:n_max)) {
+  stand_dev2[i] <- sd(as.matrix(normals[normals$Age > seq(n_min,n_max, by=1)[i]-1 & normals$Age < seq(n_min,n_max, by=1)[i]+1,]$isthmuscingulate_thickness))
+}
+sd_fit <- loess(stand_dev2 ~ c(n_min:n_max), degree=1, span=0.7)
+sd_pred <- predict(sd_fit, newdata=n_min:n_max)
+plotFrame <- data.frame( Age=c(n_min:n_max), fit=smoothPred$fit, sd=sd_pred ) #combines all the model's data into single dataframe
+
+#Make Plot elements from normals data
+region_plot <- ggplot(plotFrame,aes(x=Age,y=fit))
+region_smoothLine <- geom_line(aes(x=Age,y=fit,colour="Normals"),size=1.5)
+region_smoothRibbon2 <- geom_ribbon(aes(x=Age,ymax=fit+2*sd,ymin=fit-2*sd, fill="2 Std Dev"),alpha=0.1)
+region_smoothRibbon <- geom_ribbon(aes(x=Age,ymax=fit+sd,ymin=fit-sd, fill="1 Std Dev"),alpha=0.5)
+originals <- geom_point(data=normals, aes(x=Age,y=isthmuscingulate_thickness, color="Points"), size=1) #scatter of individual points
+linear_reg <- stat_smooth(data=normals, method="lm", se=FALSE, size=1.3, aes(x=Age,y=isthmuscingulate_thickness, color="Lin Reg"))
+
+
+#Make Aesthetic Plot elements
+region_ylabel <- ylab(expression(bold(paste('Thickness (mm)'))))
+
+
+#set title
+
+region_title <- ggtitle("Isthmus Cingulate Thickness")
+
+#Set y-axis
+region_customY <- scale_y_continuous(limits=c(1.8,3))
+
+
+
+#Combine the different elements of the plot
+isthmuscingulate_thickness_plot <- (region_plot + theme_bw() + options + originals + linear_reg + region_smoothLine 
+                                    + region_xlabel + region_ylabel + region_title  + region_customX  + region_customY +
+                                      legend)
+
+
+print(isthmuscingulate_thickness_plot)
+
+
+
+
+
+######### Entorhinal_volume ########
+#Smooth population data with loess
+smoothFit <- loess( normals$entorhinal_volume ~ normals$Age, degree=1, span=0.7 ) #locally fits a polynomial surface
+smoothPred <- predict( smoothFit, newdata=n_min:n_max, se=TRUE ) #uses loess fit to predict data for each age
+stand_dev2 <- matrix()
+for (i in 1:length(n_min:n_max)) {
+  stand_dev2[i] <- sd(as.matrix(normals[normals$Age > seq(n_min,n_max, by=1)[i]-1 & normals$Age < seq(n_min,n_max, by=1)[i]+1,]$entorhinal_volume))
+}
+sd_fit <- loess(stand_dev2 ~ c(n_min:n_max), degree=1, span=0.7)
+sd_pred <- predict(sd_fit, newdata=n_min:n_max)
+plotFrame <- data.frame( Age=c(n_min:n_max), fit=smoothPred$fit, sd=sd_pred ) #combines all the model's data into single dataframe
+
+#Make Plot elements from normals data
+region_plot <- ggplot()
+region_smoothLine <- geom_line(data=plotFrame, aes(x=Age,y=fit,colour="Normals"),size=1.5)
+region_smoothRibbon2 <- geom_ribbon(data=plotFrame, aes(x=Age,ymax=fit+2*sd,ymin=fit-2*sd, fill="2 Std Dev"),alpha=0.1)
+region_smoothRibbon <- geom_ribbon(data=plotFrame, aes(x=Age,ymax=fit+sd,ymin=fit-sd, fill="1 Std Dev"),alpha=0.5)
+originals <- geom_point(data=normals, aes(x=Age,y=entorhinal_volume, color="Points"),size=1) #scatter of individual points
+linear_reg <- stat_smooth(data=normals, method="lm", se=FALSE,size=1.3, aes(x=Age,y=entorhinal_volume, color="Lin Reg"))
+
+
+#Make Aesthetic Plot elements
+region_ylabel <- ylab(expression(bold(paste('Normalized Volume  ',(mm^{3})))))
+
+
+#set title
+
+region_title <- ggtitle("Entorhinal Volume")
+
+#Set y-axis
+region_customY <- scale_y_continuous(limits=c(1600,5000))
+
+
+
+#Combine the different elements of the plot
+entorhinal_volume_plot <- (region_plot + theme_bw() + options + originals + linear_reg + region_smoothLine 
+                                    + region_xlabel + region_ylabel + region_title  + region_customX  + region_customY +
+                                      legend)
+
+
+print(entorhinal_volume_plot)
+
+
+
+
+
+
+
+
+
+######### Hippocampus Volume ########
+#Smooth population data with loess
+smoothFit <- loess( normals$Hippocampus_volume ~ normals$Age, degree=1, span=0.7 ) #locally fits a polynomial surface
+smoothPred <- predict( smoothFit, newdata=n_min:n_max, se=TRUE ) #uses loess fit to predict data for each age
+stand_dev2 <- matrix()
+for (i in 1:length(n_min:n_max)) {
+  stand_dev2[i] <- sd(as.matrix(normals[normals$Age > seq(n_min,n_max, by=1)[i]-1 & normals$Age < seq(n_min,n_max, by=1)[i]+1,]$Hippocampus_volume))
+}
+sd_fit <- loess(stand_dev2 ~ c(n_min:n_max), degree=1, span=0.7)
+sd_pred <- predict(sd_fit, newdata=n_min:n_max)
+plotFrame <- data.frame( Age=c(n_min:n_max), fit=smoothPred$fit, sd=sd_pred ) #combines all the model's data into single dataframe
+
+#Make Plot elements from normals data
+region_plot <- ggplot(plotFrame,aes(x=Age,y=fit))
+region_smoothLine <- geom_line(aes(x=Age,y=fit,colour="Normals"),size=1.5)
+region_smoothRibbon2 <- geom_ribbon(aes(x=Age,ymax=fit+2*sd,ymin=fit-2*sd, fill="2 Std Dev"),alpha=0.1)
+region_smoothRibbon <- geom_ribbon(aes(x=Age,ymax=fit+sd,ymin=fit-sd, fill="1 Std Dev"),alpha=0.5)
+originals <- geom_point(data=normals, aes(x=Age,y=Hippocampus_volume, color="Points"),size=1) #scatter of individual points
+linear_reg <- stat_smooth(data=normals, method="lm", se=FALSE,size=1.3, aes(x=Age,y=Hippocampus_volume, color="Lin Reg"))
+
+
+#Make Aesthetic Plot elements
+region_ylabel <- ylab(expression(bold(paste('Normalized Volume  ',(mm^{3})))))
+
+
+#set title
+
+region_title <- ggtitle("Hippocampal Volume")
+
+#Set y-axis
+region_customY <- scale_y_continuous(limits=c(4000,10500))
+
+
+
+#Combine the different elements of the plot
+Hippocampus_volume_plot <- (region_plot + theme_bw() + options + originals + linear_reg + region_smoothLine 
+                                    + region_xlabel + region_ylabel + region_title  + region_customX  + region_customY +
+                                      legend)
+
+
+print(Hippocampus_volume_plot)
+
+
+
+
+
+
+
+
+######### Posterior Cingulate thickness ########
+#Smooth population data with loess
+smoothFit <- loess( normals$posteriorcingulate_thickness ~ normals$Age, degree=1, span=0.7 ) #locally fits a polynomial surface
+smoothPred <- predict( smoothFit, newdata=n_min:n_max, se=TRUE ) #uses loess fit to predict data for each age
+stand_dev2 <- matrix()
+for (i in 1:length(n_min:n_max)) {
+  stand_dev2[i] <- sd(as.matrix(normals[normals$Age > seq(n_min,n_max, by=1)[i]-1 & normals$Age < seq(n_min,n_max, by=1)[i]+1,]$posteriorcingulate_thickness))
+}
+sd_fit <- loess(stand_dev2 ~ c(n_min:n_max), degree=1, span=0.7)
+sd_pred <- predict(sd_fit, newdata=n_min:n_max)
+plotFrame <- data.frame( Age=c(n_min:n_max), fit=smoothPred$fit, sd=sd_pred ) #combines all the model's data into single dataframe
+
+#Make Plot elements from normals data
+region_plot <- ggplot(plotFrame,aes(x=Age,y=fit))
+region_smoothLine <- geom_line(aes(x=Age,y=fit,colour="Normals"),size=1.5)
+region_smoothRibbon2 <- geom_ribbon(aes(x=Age,ymax=fit+2*sd,ymin=fit-2*sd, fill="2 Std Dev"),alpha=0.1)
+region_smoothRibbon <- geom_ribbon(aes(x=Age,ymax=fit+sd,ymin=fit-sd, fill="1 Std Dev"),alpha=0.5)
+originals <- geom_point(data=normals, aes(x=Age,y=posteriorcingulate_thickness, color="Points"),size=1) #scatter of individual points
+linear_reg <- stat_smooth(data=normals, method="lm", se=FALSE,size=1.3, aes(x=Age,y=posteriorcingulate_thickness, color="Lin Reg"))
+
+
+#Make Aesthetic Plot elements
+region_ylabel <- ylab(expression(bold(paste('Thickness (mm)'))))
+
+
+#set title
+
+region_title <- ggtitle("Posterior Cingulate Thickness")
+
+#Set y-axis
+region_customY <- scale_y_continuous(limits=c(1.8,3))
+
+
+
+#Combine the different elements of the plot
+posteriorcingulate_thickness_plot <- (region_plot + theme_bw() + options + originals + linear_reg + region_smoothLine 
+                                    + region_xlabel + region_ylabel + region_title  + region_customX  + region_customY +
+                                      legend)
+
+
+print(posteriorcingulate_thickness_plot)
+
+
+############## Start of Slopes #######
+
+#Set y-axis
+region_customY <- scale_y_continuous(limits=c(-0.4,0.05))
+
+
+isthmuscingulate_thickness_slope_plot <- ggplot(slopes, aes(x=Age,y=isthmuscingulate_thickness*100)) +
+  theme_bw() + 
+  options +
+  geom_point(aes(color="Points")) + 
+  stat_smooth(method="lm", se=FALSE, aes(color="Lin Reg")) + 
+  ggtitle("Isthmus Cingulate Thickness Estimated Derivative") +
+  xlab("Age") +  
+  ylab(expression(bold('Rate of Change (%)'))) + 
+  region_customY + 
+  region_customX + 
+  scale_colour_manual(name="", labels=c("Points"="Estimated Derivative", "Lin Reg"="Linear Regression"),  values = c("Points"="black", "Lin Reg"="blue"))  +
+  theme (legend.position= c(0.22, 0.11))
+
+isthmuscingulate_thickness_slope_plot
+
+
+posteriorcingulate_thickness_slope_plot <- ggplot(slopes, aes(x=Age,y=posteriorcingulate_thickness*100)) +
+  theme_bw() + 
+  options +
+  geom_point(aes(color="Points")) + 
+  stat_smooth(method="lm", se=FALSE, aes(color="Lin Reg")) + 
+  ggtitle("Posterior Cingulate Thickness Estimated Derivative") +
+  xlab("Age") +  
+  ylab(expression(bold('Rate of Change (%)'))) + 
+  region_customY + 
+  region_customX + 
+  scale_colour_manual(name="", labels=c("Points"="Estimated Derivative", "Lin Reg"="Linear Regression"),  values = c("Points"="black", "Lin Reg"="blue"))   +
+  theme (legend.position= c(0.22, 0.11))
+
+posteriorcingulate_thickness_slope_plot
+
+  
+
+```
+
+
+
+
+
+```{r Combine Example Region and Slope Figs, fig.height=18, fig.width=16}
+
+full_lm_plot <- plot_grid(isthmuscingulate_thickness_plot, entorhinal_volume_plot, Hippocampus_volume_plot, posteriorcingulate_thickness_plot, isthmuscingulate_thickness_slope_plot, posteriorcingulate_thickness_slope_plot, labels = c("A", "B", "C", "D", "E", "F"),label_size = 32,
+          ncol = 2, nrow = 3, align = "H")
+full_lm_plot
+
+
+
+```
+
+
+
+```{r Combine Example Region and Slope Figs - small version, fig.height=12, fig.width=16}
+
+full_lm_plot <- plot_grid(isthmuscingulate_thickness_plot, posteriorcingulate_thickness_plot, isthmuscingulate_thickness_slope_plot, posteriorcingulate_thickness_slope_plot, labels = c("A", "B", "C", "D"),label_size = 32, ncol = 2, nrow = 2, align = "H")
+full_lm_plot
+
+
+
+```
+
+
+
+
+```{r Graph Age & Slope Beta weights, fig.height=6, fig.width=8}
+
+####### Graph Age model beta values ########
+
+theme <- theme(axis.text.x=element_blank(), 
+               axis.title.x=element_blank(), 
+               legend.text=element_text(size=10),
+               legend.title=element_text(size=12,face="italic"),
+               legend.position="right", 
+               plot.title=element_text(size=10,hjust = 0.5) )
+
+scale1 <- scale_fill_gradient(low="navyblue", high="gold",na.value = "grey", limits=c(-0.75,0.08)) 
+scale2 <- scale_fill_gradient2(low = ("#f46d43"), mid = "white",  high = ("#74add1"), midpoint = 0,na.value = "grey", limits=c(-1,1))
+
+
+
+#Graphs the age linear model betas
+thick_fig <- ggseg(.data=data.frame(area = row.names(thicknesses), Beta = (thicknesses$Age_beta)), mapping=aes(fill=Beta), hemisphere = "left", colour="black", size=.3, show.legend =F) +  
+  labs(title="Thicknesses") + 
+  scale1 + 
+  theme
+
+
+vol_fig <- ggseg(.data=data.frame(area = row.names(volumes), Beta = (volumes$Age_beta)), mapping=aes(fill=Beta), hemisphere = "left", colour="black", size=.3, show.legend =F) +  
+  labs(title="Volumes") + 
+  scale1 + 
+  theme
+
+
+aseg_fig <- ggseg(.data=data.frame(area = row.names(subcort), Beta = (subcort$Age_beta)), atlas="aseg", mapping=aes(fill=Beta), hemisphere = "left", colour="black", size=.3) +  
+  labs(title="") + 
+  scale1 + 
+  theme 
+
+
+age_lm_plots <- plot_grid(thick_fig, vol_fig, ncol = 1, nrow = 2, align = "H")
+age_lm_plots <- plot_grid(age_lm_plots, aseg_fig , ncol = 1, nrow = 2, align = "H")
+#age_lm_plots
+
+
+
+########### Graphs the slope age linear model ########
+thick_fig <- ggseg(.data=data.frame(area = row.names(thicknesses), Beta = (thicknesses$slope_beta)), mapping=aes(fill=Beta), hemisphere = "left", colour="black", size=.3, show.legend =F) +  
+  labs(title="Thicknesses") + 
+  scale2 + 
+  theme
+
+
+vol_fig <- ggseg(.data=data.frame(area = row.names(volumes), Beta = (volumes$slope_beta)), mapping=aes(fill=Beta), hemisphere = "left", colour="black", size=.3, show.legend =F) +  
+  labs(title="Volumes") + 
+  scale2 + 
+  theme
+
+
+aseg_fig <- ggseg(.data=data.frame(area = row.names(subcort), Beta = (subcort$slope_beta)), atlas="aseg", mapping=aes(fill=Beta), hemisphere = "left", colour="black", size=.3) +  
+  labs(title="") + 
+  scale2 + 
+  theme
+
+
+slope_lm_plots <- plot_grid(thick_fig, vol_fig , ncol = 1, nrow = 2, align = "H")
+slope_lm_plots <- plot_grid(slope_lm_plots, aseg_fig , ncol = 1, nrow = 2, align = "H")
+#slope_lm_plots
+
+
+
+###### Combine Age and Slope beta weight graphs #########
+full_lm_plot <- plot_grid(age_lm_plots, slope_lm_plots , labels = c("A", "B"),label_size = 16,  ncol = 2, nrow = 1, align = "H")
+
+full_lm_plot
+```
+
+
+```{r Myelin Graph, fig.height=6, fig.width=8}
+
+myelin_fig <- ggseg(.data=data.frame(area = row.names(myelin), Myelin= myelin$myelin), mapping=aes(fill=Myelin), 
+                 hemisphere = "left", colour="black", size=.3, show.legend =T) +  labs(fill="Myelin T1/T2") + 
+            scale_fill_gradient2(high = ("#f46d43"), mid = "white",
+  #low = ("#74add1"), midpoint = 1.35,na.value = "grey", limits=c(1.5,2.3)) + 
+  low = ("#74add1"), midpoint = 1.35,na.value = "grey", limits=c(1.05,1.7)) + 
+           theme(axis.text.x=element_blank(), axis.title.x=element_blank(),
+                   legend.text=element_text(size=10), legend.title=element_text(size=12,face="italic"),legend.position="right",
+                   plot.title=element_text(size=10,hjust = 0.5))
+
+#myelin_fig
+
+
+###Repeat with other color set
+
+myelin_fig <- ggseg(.data=data.frame(area = row.names(myelin), Myelin= myelin$myelin), mapping=aes(fill=Myelin), 
+                 hemisphere = "left", colour="black", size=.3, show.legend =T) +  labs(fill="Myelin T1/T2") + 
+#            scale_fill_gradient(high="navyblue", low="gold", na.value = "grey", limits=c(1.5,2.3)) + 
+            scale_fill_gradient(high="navyblue", low="gold", na.value = "grey", limits=c(1.05,1.7)) + 
+            theme(axis.text.x=element_blank(), axis.title.x=element_blank(),
+                   legend.text=element_text(size=10), legend.title=element_text(size=12,face="italic"),legend.position="right",
+                   plot.title=element_text(size=10,hjust = 0.5))
+
+#myelin_fig
+
+
+
+###Repeat with rainbow color set
+
+myelin_fig <- ggseg(.data=data.frame(area = row.names(myelin), Myelin= myelin$myelin), mapping=aes(fill=Myelin), 
+                 hemisphere = "left", colour="black", size=.3, show.legend =T) +  labs(fill="Myelin T1/T2") + 
+            scale_fill_gradientn(colours = rainbow(8), na.value = "grey") + 
+            theme(axis.text.x=element_blank(), axis.title.x=element_blank(),
+                   legend.text=element_text(size=10), legend.title=element_text(size=12,face="italic"),legend.position="right",
+                   plot.title=element_text(size=10,hjust = 0.5))
+
+#myelin_fig
+
+
+jet.colors <- colorRampPalette(c("#00007F", "blue", "#007FFF", "cyan", "#7FFF7F", "yellow", "#FF7F00", "red", "#7F0000"))
+ 
+myelin_fig <- ggseg(.data=data.frame(area = row.names(myelin), Myelin= myelin$myelin), mapping=aes(fill=Myelin), 
+                 hemisphere = "left", colour="black", size=.3, show.legend =T) +  
+  labs(fill="Myelin T1/T2") + 
+  scale_fill_gradientn(colours = jet.colors(8), na.value = "grey") + 
+  theme(axis.text.x=element_blank(), 
+        axis.title.x=element_blank(), 
+        legend.text=element_text(size=10),
+        legend.title=element_text(size=12,face="italic"),
+        legend.position="right",
+        plot.title=element_text(size=10,hjust = 0.5) )
+
+myelin_fig
+
+
+```
+
+
+
+```{r Myelin Correlation Plots, eval=TRUE, include=TRUE, fig.height=8, fig.width=12}
+
+
+#display correlation of myelin and aging measures
+ggplot(volumes, aes(x=as.numeric(volumes[,"Age_beta"]), y=myelin$myelin, label=rownames(myelin))) + 
+  theme_bw() + 
+  geom_point(size=2.5) + 
+  geom_smooth(method='lm', formula= y~x, se = T, color="black", fill="lightgrey") + 
+  geom_text_repel(size=5, box.padding = 0.5) + 
+  xlim(c(-0.9, 0.1)) + 
+  labs(title="Myelin Relationship to Volume v. Age Effect",x="Beta Weight", y= "Myelin T1/T2") + 
+  options
+
+
+ggplot(thicknesses, aes(x=as.numeric(thicknesses[,"Age_beta"]), y=myelin$myelin, label=rownames(myelin))) + 
+  theme_bw() + 
+  geom_point(size=2.5) + 
+  geom_smooth(method='lm', formula= y~x, se = T, color="black", fill="lightgrey") + 
+  geom_text_repel(size=5, box.padding = 0.5) + 
+  xlim(c(-0.9, 0.1)) + 
+  labs(title="Myelin Relationship to Thickness v. Age Effect",x="Beta Weight", y= "Myelin T1/T2") + 
+  options
+
+
+#volume slopes vs myelin
+ggplot(volumes, mapping=aes(x=as.numeric(volumes[,"slope_beta"]), y=myelin$myelin)) + 
+  theme_bw() + 
+  xlim(c(-1.2, 1.2)) + 
+  labs(title="Myelin Relationship to Volume Slopes v. Age Effect",x="Beta Weight", y= "Myelin T1/T2") + 
+  geom_smooth( data=volumes[volumes$slope_beta<0,],  aes( x = as.numeric( volumes[ volumes$slope_beta < 0, "slope_beta"] ), y = myelin[volumes$slope_beta<0, "myelin"] ), method = 'lm', formula = y~x, se = T, color="blue", fill="lightblue") + 
+  geom_smooth(method='lm', formula= y~x, se = T, color="black", fill="lightgrey") +
+  geom_point(size=2.5) + 
+  geom_text_repel(size=5, box.padding = 0.5, mapping=aes(label=rownames(myelin))) + 
+  options
+
+#thickness slopes vs myelin
+ggplot(thicknesses, mapping=aes(x=as.numeric(thicknesses[,"slope_beta"]), y=myelin$myelin)) + theme_bw() + 
+  xlim(c(-1.2, 1.2)) + 
+  labs(title="Myelin Relationship to Thicknesses Slopes v. Age Effect",x="Beta Weight", y= "Myelin T1/T2") + 
+  geom_smooth( data=thicknesses[thicknesses$slope_beta<0,],  aes( x = as.numeric( thicknesses[ thicknesses$slope_beta < 0, "slope_beta"] ), y = myelin[thicknesses$slope_beta<0, "myelin"] ), method = 'lm', formula = y~x, se = T, color="blue", fill="lightblue") + 
+  geom_smooth(method='lm', formula= y~x, se = T, color="black", fill="lightgrey") +
+  geom_point(size=2.5) + 
+  geom_text_repel(size=5, box.padding = 0.5, mapping=aes(label=rownames(myelin))) + 
+  options
+
+
+
+#ttest the difference of top and bottom half
+t.test(myelin[row.names(volumes[(volumes[,"Age_beta"])< -0.52328,]),], myelin[row.names(volumes[(volumes[,"Age_beta"])> -0.52328,]),])
+t.test(myelin[row.names(thicknesses[(thicknesses[,"Age_beta"])< -0.41369,]),], myelin[row.names(thicknesses[(thicknesses[,"Age_beta"])> -0.41369,]),])
+
+
+t.test(myelin[row.names(volumes[(volumes[,"slope_beta"])< -0.7475,]),], myelin[row.names(volumes[(volumes[,"slope_beta"])> -0.7475,]),])
+t.test(myelin[row.names(thicknesses[(thicknesses[,"slope_beta"])< -0.24354,]),], myelin[row.names(thicknesses[(thicknesses[,"slope_beta"])> -0.24354 ,]),])
+
+
+
+```
+
+
+
+
+```{r Amyloid Age Interaction Example Regions, fig.height=12, fig.width=18}
+#ggplot2 options
+options <- theme(axis.text.x=element_text(size=16),
+                 axis.text.y=element_text(size=16),
+                 axis.title.x=element_text(size=16, face="bold"),
+                 axis.title.y=element_text(size=16,angle=90,face="bold"),
+                 legend.text=element_text(size=16),
+                 legend.title=element_blank(),
+                 legend.position= c(0.16, 0.1),
+                 legend.title.align=0.5,
+                 plot.title=element_text(size=18,face="bold",hjust = 0.5),
+                 plot.subtitle=element_text(size=16),
+                 plot.margin = unit(c(2,3,1,1), "lines"))
+
+
+  
+  #Set normals data min and max ages
+  n_min <- 60
+  n_max <- floor(max(normals$Age, na.rm = TRUE))
+ 
+   #set x-axis 
+  region_customX <- scale_x_continuous(limits=c(60, 90), breaks=(seq(from = (10*floor((n_min-1)/10)), to = 10*ceiling(n_max/10), by = 10)))
+        
+  region_xlabel <- xlab("Age") #x label, doesn't change
+
+
+  #set legend labels - do not mess with, reorders labels without clear cause  
+  legend  <- scale_colour_manual(name="", labels=c("0"="Amyloid Negative", "1"="Amyloid Positive"),  values = c("0"="black", "1"="red3"))  
+        
+    
+    
+    
+######### Hippocampus Volume ########
+
+#Make Plot elements from merged_new data
+region_plot <- ggplot(plotFrame,aes(x=Age,y=fit))
+originals <- geom_point(data=merged_new, aes(x=Age,y=Hippocampus_volume, color=factor(AD_status)),size=1) #scatter of individual points
+linear_reg <- geom_smooth(data=merged_new, method="lm", se=FALSE,size=1.5, aes(x=Age,y=Hippocampus_volume, color=factor(AD_status), group = AD_status))
+
+#Make Aesthetic Plot elements
+region_ylabel <- ylab(expression(bold(paste('Normalized Volume  ',(mm^{3})))))
+region_title <- ggtitle("Hippocampal Volume")
+
+#Combine the different elements of the plot
+Hippocampus_volume_plot <- (region_plot + 
+                              theme_bw() +
+                              originals + 
+                              linear_reg + 
+                              region_xlabel + 
+                              region_ylabel + 
+                              region_title  + 
+                              region_customX + 
+                              options + 
+                              legend )
+#print(Hippocampus_volume_plot)
+
+
+######### Amygdala Volume ########
+
+#Make Plot elements from merged_new data
+region_plot <- ggplot(plotFrame,aes(x=Age,y=fit))
+originals <- geom_point(data=merged_new, aes(x=Age,y=Amygdala_volume, color=factor(AD_status)),size=1) #scatter of individual points
+linear_reg <- geom_smooth(data=merged_new, method="lm", se=FALSE,size=1.5, aes(x=Age,y=Amygdala_volume, color=factor(AD_status), group = AD_status))
+
+#Make Aesthetic Plot elements
+region_ylabel <- ylab(expression(bold(paste('Normalized Volume  ',(mm^{3})))))
+region_title <- ggtitle("Amygdala Volume")
+
+#Combine the different elements of the plot
+Amygdala_volume_plot <- (region_plot + 
+                              theme_bw() +
+                              originals + 
+                              linear_reg + 
+                              region_xlabel + 
+                              region_ylabel + 
+                              region_title  + 
+                              region_customX + 
+                              options + 
+                              legend )
+#print(Amygdala_volume_plot)
+
+
+
+######### Entorhinal Thickness ########
+
+#Make Plot elements from merged_new data
+region_plot <- ggplot(plotFrame,aes(x=Age,y=fit))
+originals <- geom_point(data=merged_new, aes(x=Age,y=entorhinal_thickness, color=factor(AD_status)),size=1) #scatter of individual points
+linear_reg <- geom_smooth(data=merged_new, method="lm", se=FALSE,size=1.5, aes(x=Age,y=entorhinal_thickness, color=factor(AD_status), group = AD_status))
+
+#Make Aesthetic Plot elements
+region_ylabel <- ylab(expression(bold(paste('Thickness (mm)'))))
+region_title <- ggtitle("Entorhinal Thickness")
+
+#Combine the different elements of the plot
+entorhinal_thickness_plot <-  (region_plot + 
+                              theme_bw() +
+                              originals + 
+                              linear_reg + 
+                              region_xlabel + 
+                              region_ylabel + 
+                              region_title  + 
+                              region_customX + 
+                              legend + 
+                              options)
+#print(entorhinal_thickness_plot)
+
+
+######### Inferior Parietal Thickness ########
+
+#Make Plot elements from merged_new data
+region_plot <- ggplot(plotFrame,aes(x=Age,y=fit))
+originals <- geom_point(data=merged_new, aes(x=Age,y=inferiorparietal_thickness, color=factor(AD_status)),size=1) #scatter of individual points
+linear_reg <- geom_smooth(data=merged_new, method="lm", se=FALSE,size=1.5, aes(x=Age,y=inferiorparietal_thickness, color=factor(AD_status), group = AD_status))
+
+#Make Aesthetic Plot elements
+region_ylabel <- ylab(expression(bold(paste('Thickness (mm)'))))
+region_title <- ggtitle("Inferior Parietal Thickness")
+
+#Combine the different elements of the plot
+inferiorparietal_thickness_plot <- (region_plot + 
+                              theme_bw() +
+                              originals + 
+                              linear_reg + 
+                              region_xlabel + 
+                              region_ylabel + 
+                              region_title  + 
+                              region_customX + 
+                              legend + 
+                              options)
+#print(inferiorparietal_thickness_plot)
+
+
+
+
+#combine 4 plots into 1
+full_lm_plot <- plot_grid(Hippocampus_volume_plot, entorhinal_thickness_plot, Amygdala_volume_plot, inferiorparietal_thickness_plot, labels = c("A", "B", "C", "D"),label_size = 24,
+          ncol = 2, nrow = 2, align = "H")
+full_lm_plot
+
+```
+
+
+
+```{r Graph Sex & Race p-values, fig.height=6, fig.width=8, warning=FALSE, dpi=300}
+####### Graph sex p values ########
+
+theme <- theme(axis.text.x=element_blank(), 
+               axis.title.x=element_blank(), 
+               legend.text=element_text(size=10),
+               legend.title=element_text(size=12,face="italic"),
+               legend.position="right", 
+               plot.title=element_text(size=10,hjust = 0.5) )
+
+scale1 <- scale_fill_gradient(low="#7a0177", high="white",na.value = "grey", limits=c(0,0.1)) 
+
+
+
+#Graphs the age linear model betas
+thick_fig <- ggseg(.data=data.frame(area = row.names(thicknesses), Pval = (thicknesses$Sex)), mapping=aes(fill=Pval), hemisphere = "left", colour="black", size=.3, show.legend =F) +  
+  labs(title="Thicknesses") + 
+  scale1 + 
+  theme
+
+
+vol_fig <- ggseg(.data=data.frame(area = row.names(volumes), Pval = (volumes$Sex)), mapping=aes(fill=Pval), hemisphere = "left", colour="black", size=.3, show.legend =F) +  
+  labs(title="Volumes") + 
+  scale1 + 
+  theme
+
+
+aseg_fig <- ggseg(.data=data.frame(area = row.names(subcort), Pval = (subcort$Sex)), atlas="aseg", mapping=aes(fill=Pval), hemisphere = "left", colour="black", size=.3) +  
+  labs(title="") + 
+  scale1 + 
+  theme 
+
+
+sex_plots <- plot_grid(thick_fig, vol_fig, ncol = 1, nrow = 2, align = "H")
+sex_plots <- plot_grid(sex_plots, aseg_fig , ncol = 1, nrow = 2, align = "H")
+#sex_plots
+
+
+
+########### Graphs race p values ########
+thick_fig <- ggseg(.data=data.frame(area = row.names(thicknesses), Pval = (thicknesses$Race_binary)), mapping=aes(fill=Pval), hemisphere = "left", colour="black", size=.3, show.legend =F) +  
+  labs(title="Thicknesses") + 
+  scale1 + 
+  theme
+
+
+vol_fig <- ggseg(.data=data.frame(area = row.names(volumes), Pval = (volumes$Race_binary)), mapping=aes(fill=Pval), hemisphere = "left", colour="black", size=.3, show.legend =F) +  
+  labs(title="Volumes") + 
+  scale1 + 
+  theme
+
+
+aseg_fig <- ggseg(.data=data.frame(area = row.names(subcort), Pval = (subcort$Race_binary)), atlas="aseg", mapping=aes(fill=Pval), hemisphere = "left", colour="black", size=.3) +  
+  labs(title="") + 
+  scale1 + 
+  theme
+
+
+race_plots <- plot_grid(thick_fig, vol_fig , ncol = 1, nrow = 2, align = "H")
+race_plots <- plot_grid(race_plots, aseg_fig , ncol = 1, nrow = 2, align = "H")
+#race_plots
+
+
+
+###### Combine sex and race graphs #########
+ful_pval_plot <- plot_grid(sex_plots, race_plots , labels = c("A", "B"),label_size = 16,  ncol = 2, nrow = 1, align = "H")
+
+ful_pval_plot
+
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+

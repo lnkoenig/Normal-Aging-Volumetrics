@@ -7,8 +7,8 @@ runtime: shiny
 ---
 ## Brain Atrophy in Normal Aging
 #### by Lauren N. Koenig
-Displayed below is data from the Normal Aging Cohort described in these publications [1](https://pubmed.ncbi.nlm.nih.gov/32334404/) [2](https://pubmed.ncbi.nlm.nih.gov/32334404/). The participants are from DIAN and OASIS databases, are amyloid PET negative, and remained cognitively normal for at least 3 year after the displayed MRI (processed with Freesurfer, primarily version 5.3). The exception are the amyloid+ participants which can be added, who were also cognitively normal at time of MRI but were amyloid PET positive.
-Supported by the following grants: U19AG03243, P50AG00561, P30NS09857781, P01AG026276, P01AG003991, R01AG043434, UL1TR000448, R01EB009352, P50AG005681, P01AG026276
+Displayed below is data from the Normal Aging Cohort described in [this publication](https://pubmed.ncbi.nlm.nih.gov/32334404/), and at AAIC 2021. Recalculating everything in R can be slow so **please be patient**. The participants are from DIAN and OASIS databases, are amyloid PET negative, and remained cognitively normal for at least 3 year after the displayed MRI (processed with Freesurfer, primarily version 5.3). The exception are the amyloid+ participants which can be added, who were also cognitively normal at time of MRI but were amyloid PET positive.
+This work was supported by the following grants: U19AG03243, P50AG00561, P30NS09857781, P01AG026276, P01AG003991, R01AG043434, UL1TR000448, R01EB009352, P50AG005681, P01AG026276
 
 
 ```{r setup, include=FALSE}
@@ -60,7 +60,7 @@ footer = ""
 ui <- shinyUI(fluidPage(sidebarLayout(
   sidebarPanel(
     h4(strong("Change Parameters:")),
-    checkboxInput("pcad",label="Include Amyloid+"),
+    checkboxInput("pcad",label="Include Amyloid+ (preclinical AD)"),
     radioButtons("sex", label=h5("Sex"), choices=list("All"=1, "Men"=2, "Women"=3)),
     radioButtons("apoe4", label=h5("APOE Status"), choices=list("All"=1, "E4 Non-Carriers"=2, "E4 Carriers"=3)),
     sliderInput("span", label=h5("Alpha (smoothing)"), min=0.1, value=0.7, max=2, step=0.1 ),
@@ -81,16 +81,18 @@ ui <- shinyUI(fluidPage(sidebarLayout(
               column(2, checkboxInput("individual_points",label="Show all datapoints", value=TRUE)),
               column(2, offset = 0, numericInput("Age", label=h6("Age (years)"), value=NA)),
               column(2, numericInput("region_val", label=h6("Volume/Thickness"), value=NA)), 
-              column(2, numericInput("ICV", label=h6("Intracranial Volume"), value=1500000))
+              column(3, numericInput("ICV", label=h6("Intracranial Volume"), value=1500000))
             )
           )
         ),
         hr(),
-        plotOutput("region_plot",  width = "1050px", height = "500px"),
+        plotOutput("region_plot",  width = "1100px", height = "500px"),
       ),
       tabPanel("Whole Brain Map",
-        plotOutput("ggseg_plot", width = "850px", height = "800px")),    
+          paste("The strength of atrophy is measured as the standardized beta weight of a linear model between a region's volume/thickness and age. The pattern of atrophy is similarly measured but between the estimated derivative of the data and age (the lower graph in the Aging Curves tab)."),
+          plotOutput("ggseg_plot", width = "850px", height = "800px")),    
       tabPanel("Whole Brain Table",
+          paste("The strength of atrophy is measured as the standardized beta weight of a linear model between a region's volume/thickness and age. The pattern of atrophy is similarly measured but between the estimated derivative of the data and age (the lower graph in the Aging Curves tab)."),
           tableOutput("table"))
       ))),
   hr(),
@@ -127,8 +129,8 @@ server <- shinyServer(function(input, output) {
     for (region in region_list){
       ####linear pattern
       model <- lm.beta(lm(normals[,region] ~ normals$Age ))
-      results[region, "Age_p"] <- summary(model)$coefficients[2,5]
-      results[region, "Age_beta"] <- summary(model)$coefficients[2,2]
+      results[region, "strength_p"] <- summary(model)$coefficients[2,5]
+      results[region, "strength_beta"] <- summary(model)$coefficients[2,2]
   
       ####non-linear pattern
       plotFrame <- fit_data(normals, region, input$span)
@@ -141,17 +143,17 @@ server <- shinyServer(function(input, output) {
 
       #make lm for each region and each variable in normals list, save p-value
        model <- lm.beta(lm(slopes[,region] ~ slopes$Age ))
-       results[region, "slope_p"] <- summary(model)$coefficients[2,5]
-       results[region, "slope_beta"] <- summary(model)$coefficients[2,2]
+       results[region, "pattern_p"] <- summary(model)$coefficients[2,5]
+       results[region, "pattern_beta"] <- summary(model)$coefficients[2,2]
     }  
     
   #Once done finding all p-values, do multiple comparisons correction
-  results[,"Age_p"] <- p.adjust((results[,"Age_p"]), method=mc)
-  results[,"slope_p"] <- p.adjust((results[,"slope_p"]), method=mc)
+  results[,"strength_p"] <- p.adjust((results[,"strength_p"]), method=mc)
+  results[,"pattern_p"] <- p.adjust((results[,"pattern_p"]), method=mc)
 
-   for (i in c("Age_beta", "slope_beta")){results[i] <- round(results[i], digits=3)}
+   for (i in c("strength_beta", "pattern_beta")){results[i] <- round(results[i], digits=3)}
     
-    for (i in c("Age_p", "slope_p")){
+    for (i in c("strength_p", "pattern_p")){
       for (j in 1:length(results[,i])) {
         if (results[j,i] >=0.01) {results[j,i] <- format(round(as.numeric(results[j,i]), digits=2), nsmall=2)}
         else if (results[j,i]<0.01 & results[j,i]>=0.001 ){results[j,i] <- round(as.numeric(results[j,i]), digits=3)}
@@ -177,8 +179,8 @@ server <- shinyServer(function(input, output) {
       
       #flip linear model beta values where it makes sense
       results_adjusted <- results
-      results_adjusted[ row.names(results_adjusted) %in% reverse,]$Age_beta <- -1*results_adjusted[ row.names(results_adjusted) %in% reverse,]$Age_beta
-      results_adjusted[ row.names(results_adjusted) %in% reverse,]$slope_beta <- -1*results_adjusted[ row.names(results_adjusted) %in% reverse,]$slope_beta
+      results_adjusted[ row.names(results_adjusted) %in% reverse,]$strength_beta <- -1*results_adjusted[ row.names(results_adjusted) %in% reverse,]$strength_beta
+      results_adjusted[ row.names(results_adjusted) %in% reverse,]$pattern_beta <- -1*results_adjusted[ row.names(results_adjusted) %in% reverse,]$pattern_beta
     
       #select out thickness measures and rename to match ggseg conventions
       thicknesses <- results_adjusted[c("Banks STS Thickness", "Caudal Anterior Cingulate Thickness", "Caudal Middle Frontal Thickness", "Cuneus Thickness", "Entorhinal Thickness", "Frontal Pole Thickness", "Fusiform Thickness", "Inferior Parietal Thickness", "Inferior Temporal Thickness", "Insula Thickness",  "Isthmus Cingulate Thickness", "Lateral Occipital Thickness","Lateral Orbitofrontal Thickness", "Lingual Thickness", "Medial Orbitofrontal Thickness", "Middle Temporal Thickness", "Paracentral Thickness", "Parahippocampal Thickness", "Pars Opercularis Thickness", "Pars Orbitalis Thickness", "Pars Triangularis Thickness", "Pericalcarine Thickness", "Postcentral Thickness", "Posterior Cingulate Thickness", "Precentral Thickness", "Precuneus Thickness", "Rostral Anterior Cingulate Thickness", "Rostral Middle Frontal Thickness", "Superior Frontal Thickness", "Superior Parietal Thickness", "Superior Temporal Thickness", "Supramarginal Thickness", "Temporal Pole Thickness", "Transverse Temporal Thickness"),]
@@ -216,19 +218,19 @@ server <- shinyServer(function(input, output) {
       
       
       #Graphs the age linear model betas
-      thick_fig <- ggseg(.data=data.frame(area=row.names(thicknesses), Beta=(thicknesses$Age_beta)), mapping=aes(fill=Beta), hemisphere="left", colour="black", size=.3, show.legend=F) +  
+      thick_fig <- ggseg(.data=data.frame(area=row.names(thicknesses), Beta=(thicknesses$strength_beta)), mapping=aes(fill=Beta), hemisphere="left", colour="black", size=.3, show.legend=F) +  
         labs(title="Thicknesses") + 
         scale1 + 
         theme
       
       
-      vol_fig <- ggseg(.data=data.frame(area=row.names(volumes), Beta=(volumes$Age_beta)), mapping=aes(fill=Beta), hemisphere="left", colour="black", size=.3, show.legend=F) +  
+      vol_fig <- ggseg(.data=data.frame(area=row.names(volumes), Beta=(volumes$strength_beta)), mapping=aes(fill=Beta), hemisphere="left", colour="black", size=.3, show.legend=F) +  
         labs(title="Volumes") + 
         scale1 + 
         theme
       
       
-      aseg_fig <- ggseg(.data=data.frame(area=row.names(subcort), Beta=(subcort$Age_beta)), atlas="aseg", mapping=aes(fill=Beta), hemisphere="left", colour="black", size=.3) +  
+      aseg_fig <- ggseg(.data=data.frame(area=row.names(subcort), Beta=(subcort$strength_beta)), atlas="aseg", mapping=aes(fill=Beta), hemisphere="left", colour="black", size=.3) +  
         labs(title="") + 
         scale1 + 
         theme 
@@ -241,19 +243,19 @@ server <- shinyServer(function(input, output) {
       
       
       ########### Graphs the slope age linear model ########
-      thick_fig <- ggseg(.data=data.frame(area=row.names(thicknesses), Beta=(thicknesses$slope_beta)), mapping=aes(fill=Beta), hemisphere="left", colour="black", size=.3, show.legend=F) +  
+      thick_fig <- ggseg(.data=data.frame(area=row.names(thicknesses), Beta=(thicknesses$pattern_beta)), mapping=aes(fill=Beta), hemisphere="left", colour="black", size=.3, show.legend=F) +  
         labs(title="Thicknesses") + 
         scale2 + 
         theme
       
       
-      vol_fig <- ggseg(.data=data.frame(area=row.names(volumes), Beta=(volumes$slope_beta)), mapping=aes(fill=Beta), hemisphere="left", colour="black", size=.3, show.legend=F) +  
+      vol_fig <- ggseg(.data=data.frame(area=row.names(volumes), Beta=(volumes$pattern_beta)), mapping=aes(fill=Beta), hemisphere="left", colour="black", size=.3, show.legend=F) +  
         labs(title="Volumes") + 
         scale2 + 
         theme
       
       
-      aseg_fig <- ggseg(.data=data.frame(area=row.names(subcort), Beta=(subcort$slope_beta)), atlas="aseg", mapping=aes(fill=Beta), hemisphere="left", colour="black", size=.3) +  
+      aseg_fig <- ggseg(.data=data.frame(area=row.names(subcort), Beta=(subcort$pattern_beta)), atlas="aseg", mapping=aes(fill=Beta), hemisphere="left", colour="black", size=.3) +  
         labs(title="") + 
         scale2 + 
         theme
@@ -266,7 +268,7 @@ server <- shinyServer(function(input, output) {
       
       
       ###### Combine Age and Slope beta weight graphs #########
-      full_lm_plot <- plot_grid(age_lm_plots, slope_lm_plots , labels=c("Age", "Slope"),label_size=16,  ncol=2, nrow=1, align="H")
+      full_lm_plot <- plot_grid(age_lm_plots, slope_lm_plots , labels=c("Strength", "Pattern"),label_size=16,  ncol=2, nrow=1, align="H")
       
       return(full_lm_plot)
       
@@ -468,7 +470,7 @@ server <- shinyServer(function(input, output) {
 
   plot_grid(Fig, slope_plot, ncol = 1, nrow = 2, align = "v")
 
-  }, width=1050, height=1000)
+  }, width=1100, height=1000)
 
   
   output$table <- renderTable({

@@ -1,0 +1,605 @@
+---
+title: "Normal Aging Analyses Output"
+output: 
+  word_document:
+fig_width: 12 
+fig_height: 4 
+---
+
+
+
+```{r Set Up, echo=FALSE, warning=FALSE, include=FALSE}
+
+#Load the R packages necessary for rest of script
+packages <- c("car", "lme4", "ggplot2", "lm.beta", "rsq")
+for( i in packages ){
+  #  require returns TRUE invisibly if it was able to load package
+  if( ! require( i , character.only = TRUE ) ){
+    #  If package was not able to be loaded then re-install
+    install.packages( i , dependencies = TRUE )
+    #  Load package after installing
+    require( i , character.only = TRUE )
+    }
+  }
+
+#Read in data
+merged_new <- read.csv("data-clean/clean_Normal_Aging_and_PCAD_cohorts_2020-06-02.csv")
+slopes <- read.csv("data-clean/NormalAgingCohort_Slopes_2020-05-16.csv")
+slopes_m <- read.csv("data-clean/MergedCohort_Slopes_2020-05-16.csv")
+
+myelin <- read.csv("data-clean/clean_myelin_2020-05-16.csv") #original myelin data
+myelin <- read.csv("data-clean/clean_updated_myelin_2020-07-04.csv") # updated but unpublished myelin data
+
+#Load in extra OASIS Imaging data for Normal Aging and Train+Test Cohort
+oasis_pet <- read.csv("../../Data/OASIS_data/oasis_json_results_all_pet.csv")
+oasis_mr <- read.csv("../../Data/OASIS_data/oasis_json_results_all_mr.csv")
+
+
+#Extra Clean Up
+#make race binarized variable
+merged_new$Race[merged_new$Race=="Unknown"] <- NA #change unknown race to NA
+merged_new$Race_binary <- factor(merged_new$Race=="Caucasian")
+
+
+#separate out normal aging cohort
+normals <- merged_new[merged_new$AD_status==0,]
+
+
+#remove those under age 60 for merged cohort
+merged_new_60 <- merged_new[merged_new$Age>60,]
+
+
+#change rownames
+myelin <- data.frame(row.names = myelin$X, myelin=myelin$myelin)
+
+#make list of all the brain regions
+region_list <- colnames(subset(merged_new, select = -c(AD_status, CLINICALDATA.ID, Subject, cdr, mmse, apoe, apoe4, FS_FSDATA.ID, PUP_PUPTIMECOURSEDATA.ID, tracer, Cent_fSUVR_rsf_TOT_CORTMEAN, PET_fSUVR_rsf_TOT_CORTMEAN, MR_Session_Label, Scanner, Age, version, Race, Ethnicity, Education, Sex, source, visit, DIAN_ID, PET_fSUVR_rsf_TOT_CORTMEAN, cdr_long, Race_binary) ) )
+
+
+#Create dataframe to hold all the results
+results <- data.frame() #results from normal aging cohort
+results_m <- data.frame() #results from combined normal aging cohort and preclinical AD cohort
+
+#suppress scientific notation
+options(scipen = 999)
+
+#set multiple comparisons correction type
+mc <- "holm"
+``` 
+
+
+
+```{r Imaging Methods}
+
+
+#remove all but the T1's from oasis_mr
+oasis_mr <- oasis_mr[oasis_mr$scan_type=="T1w",]
+
+#separate out the OASIS and DIAN subjects
+  subset_oasis <- merged_new[merged_new$source=="OASIS",c("MR_Session_Label", "PUP_PUPTIMECOURSEDATA.ID", "tracer", "Scanner", "version")]
+  subset_DIAN <- merged_new[merged_new$source=="DIAN",c("MR_Session_Label","DIAN_ID", "PUP_PUPTIMECOURSEDATA.ID", "tracer", "Scanner", "version")]
+  
+
+  
+#add json MR data to oasis subjects
+  oasis_mr <- merge(subset_oasis, oasis_mr,  by.x="MR_Session_Label", by.y="mr_session_id"  )
+  oasis_mr <- oasis_mr[!duplicated(oasis_mr$MR_Session_Label),] #remove duplicates (b/c of subjects with multiple anat scans)
+
+
+  #Repeat with PET
+  #first make PET session id column for normals and train/test
+  ID <- data.frame(t(data.frame(strsplit(subset_oasis[subset_oasis$PUP_PUPTIMECOURSEDATA.ID!="",]$PUP_PUPTIMECOURSEDATA.ID, split="_"))))
+  
+  subset_oasis$pet_session_id <- NA
+  subset_oasis[subset_oasis$PUP_PUPTIMECOURSEDATA.ID!="","pet_session_id"] <- paste(ID[,1], ID[,2],ID[,4],sep="_" )
+  
+  #add json MR data to oasis subjects
+  oasis_pet <- merge(subset_oasis, oasis_pet, all.x=T, by="pet_session_id"  )
+  oasis_pet <- oasis_pet[!duplicated(oasis_pet$pet_session_id),] #remove duplicates (b/c of subjects with multiple anat scans)
+  
+  
+  
+  
+  
+#Scanner names
+sort(table(oasis_mr$ManufacturersModelName), decreasing = T)
+  
+# scanners strength
+table(oasis_mr$Scanner)
+  
+#Reptition Time (TR)
+table(oasis_mr$RepetitionTime)
+  
+#Echo Time (TE), 
+table(oasis_mr$EchoTime*1000)
+
+#inversion time (TI)
+table(oasis_mr$InversionTime)
+
+#Flip Angle
+table(oasis_mr$FlipAngle)
+
+table(oasis_mr$EchoTime*1000, oasis_mr$InversionTime, oasis_mr$FlipAngle)
+table(oasis_mr$EchoTime*1000, oasis_mr$RepetitionTime)
+
+
+# Slice thickness
+table(oasis_mr$SliceThickness)
+
+#In Plane resolution ? FOV/matrix size
+table(oasis_mr$ReconMatrixPE, oasis_mr$AcquisitionMatrixPE)
+
+table(oasis_mr$SliceThickness, oasis_mr$AcquisitionMatrixPE)
+
+#freesurfer versions
+table(oasis_mr$version)
+
+#PET
+  #Scanner names - PET
+  sort(table(oasis_pet$ManufacturersModelName), decreasing = T)
+  
+  # PET Tracers
+  table(oasis_pet$tracer)
+  
+  #PET Injection range and mean 
+  summary(oasis_pet[oasis_pet$tracer=="AV45",]$Dosage)
+  summary(oasis_pet[oasis_pet$tracer=="PIB",]$Dosage)
+
+
+
+  
+  
+
+```
+
+
+
+
+```{r Cohort Demographics Table and Cohort Difference Stats, warning=FALSE}
+#make list of the continuous and categorical variables (demographics + other non-volumetric data)
+var_list_cont <- c("Age", "mmse", "Education", "Cent_fSUVR_rsf_TOT_CORTMEAN" )
+var_list_catg <- c("source", "Sex","apoe4", "Race", "tracer", "Ethnicity")
+
+
+
+#show tables of basic demographics of the combined normal aging and preclinical AD cohorts
+table(merged_new$AD_status)
+tapply(merged_new$source, merged_new$AD_status, table)
+tapply(merged_new$Age, merged_new$AD_status, summary)
+prop.table(table(merged_new$Sex, merged_new$AD_status), margin = 2)
+tapply(merged_new$mmse, merged_new$AD_status, summary)
+prop.table(table(merged_new$apoe4, merged_new$AD_status), margin = 2)
+prop.table(table(merged_new$Race=="Caucasian", merged_new$AD_status), margin = 2)
+tapply(merged_new$Education, merged_new$AD_status, summary)
+tapply(merged_new$Cent_fSUVR_rsf_TOT_CORTMEAN, merged_new$AD_status, summary)
+
+#list of missing variables
+for (var in c(var_list_cont, var_list_catg)){
+  print(var)
+  print(tapply(is.na(merged_new[,var]), merged_new$AD_status, summary))
+}
+
+#show tables of basic demographics of the combined normal aging and preclinical AD cohorts
+table(merged_new_60$AD_status)
+tapply(merged_new_60$source, merged_new_60$AD_status, table)
+tapply(merged_new_60$Age, merged_new_60$AD_status, summary)
+prop.table(table(merged_new_60$Sex, merged_new_60$AD_status), margin = 2)
+tapply(merged_new_60$mmse, merged_new_60$AD_status, summary)
+prop.table(table(merged_new_60$apoe4, merged_new_60$AD_status), margin = 2)
+prop.table(table(merged_new_60$Race=="Caucasian", merged_new_60$AD_status), margin = 2)
+tapply(merged_new_60$Education, merged_new_60$AD_status, summary)
+tapply(merged_new_60$Cent_fSUVR_rsf_TOT_CORTMEAN, merged_new_60$AD_status, summary)
+
+#list of missing variables
+for (var in c(var_list_cont, var_list_catg)){
+  print(var)
+  print(tapply(is.na(merged_new_60[,var]), merged_new_60$AD_status, summary))
+}
+
+#run t-test comparing amyloid neg and pos for each continuous variable
+for (var in var_list_cont){ #for each demographic
+    if( !(var %in% c()) ){
+      ttest <- t.test(merged_new_60[,var] ~ merged_new_60$AD_status)
+      
+      if (ttest$p.value < 0.05){ #only print significant results
+        print(var)
+        print((ttest))
+      }
+      
+    }
+}
+
+
+#run chi square test comparing amyloid neg and pos for each categorical variable
+for (var in var_list_catg){ #for each demographic
+    if( !(var %in% c("source")) ){
+      chitest <- chisq.test(merged_new_60[,var], merged_new_60$AD_status)
+      
+      if (chitest$p.value < 0.05){ #only print significant results
+        print(var)
+        print((chitest))
+      }
+      
+    }
+}
+  
+  
+
+
+
+```
+
+
+
+```{r LM of Demographics on volumes/thicknesses, echo=FALSE, warning=FALSE, include=TRUE}
+
+#create a list of the demographics I'm considering controlling for
+demographics <- c("Sex", "apoe4", "mmse", "Race_binary", "Education")
+
+for (var in demographics){
+  for (region in region_list){
+    #make lm for each region and each variable in normals list, save p-value
+    model <- lm.beta(lm(normals[,region] ~ normals[,var] ))
+    results[region, var] <- summary(model)$coefficients[2,5]
+
+    #make lm for each region and each variable in combined normals pcad list, save p-value
+    model <- lm.beta(lm(merged_new[,region] ~ merged_new[,var] ))
+    results_m[region, var] <- summary(model)$coefficients[2,5]
+
+  }
+  #for each variable, once done finding all p-values, do multiple comparisons correction
+  results[,var] <- p.adjust((results[,var]), method = mc)
+  results_m[,var] <- p.adjust((results_m[,var]), method = mc)
+
+
+
+}
+
+print("Normal Aging Cohort Results")
+for (var in demographics){
+  for (region in region_list){
+    if ( results[region,var]<0.05){
+      #using the corrected p-values, print the significant relationships and summary data showing direction
+      print(paste(var, region))
+      print(format(round(summary(lm.beta(lm(normals[,region] ~ normals[,var] )))$coefficients[2,2], 3), nsmall=3)) # print standardized coefficients
+      print(format(round(results[region,var],4), nsmall=3))
+      print(tapply( as.vector(normals[,region]), normals[,var], summary))
+    }
+  }
+}
+
+cat("\n")
+print("Combined PCAD and Normal Aging Cohort Results")
+for (var in demographics){
+  for (region in region_list){
+    if ( results_m[region,var]<0.05){
+      #using the corrected p-values, print the significant relationships and summary data showing direction
+      print(paste(var, region, round(results_m[region,var], digits = 3)))
+      print(summary(lm.beta(lm(merged_new[,region] ~ merged_new[,var] )))$coefficients[2,2]) # print standardized coefficients
+      print(tapply( as.vector(merged_new[,region]), merged_new[,var], summary))
+    }
+  }
+}
+
+
+
+```
+
+
+
+```{r LM of Age and volumes/thicknesses, echo=FALSE, warning=FALSE}
+
+for (region in region_list){
+  #make lm for each region and each variable in normals list, save p-value
+  model <- lm.beta(lm(normals[,region] ~ normals$Age ))
+  results[region, "Age_p"] <- summary(model)$coefficients[2,5]
+  results[region, "Age_beta"] <- summary(model)$coefficients[2,2]
+
+  #make lm for each region and each variable in combined normals pcad list, save p-value
+  model <- lm.beta(lm(merged_new[,region] ~ merged_new$Age ))
+  results_m[region, "Age_p"] <- summary(model)$coefficients[2,5]
+  results_m[region, "Age_beta"] <- summary(model)$coefficients[2,2]
+
+}
+
+#Once done finding all p-values, do multiple comparisons correction
+  results[,"Age_p"] <- p.adjust((results[,"Age_p"]), method = mc)
+  results_m[,"Age_p"] <- p.adjust((results_m[,"Age_p"]), method = mc)
+
+
+print("Normal Aging Cohort Results")
+for (region in region_list){
+  if ( results[region,"Age_p"]>0.05){
+    #using the corrected p-values, print the significant relationships and summary data showing direction
+    print(paste("Age LM", region, round(results[region,"Age_p"], digits = 3), round(results[region,"Age_beta"], digits = 3)))
+
+  }
+}
+
+cat("\n")
+print("Combined PCAD and Normal Aging Cohort Results")
+for (region in region_list){
+  if ( results_m[region,"Age_p"]>0.05){
+    #using the corrected p-values, print the significant relationships and summary data showing direction
+    #print(paste("Age LM", region, round(results_m[region,"Age_p"], digits = 3), round(results_m[region,"Age_beta"], digits = 3)))
+
+  }
+}
+
+
+```
+
+
+
+```{r LM of Slope and volumes/thicknesses, echo=FALSE, warning=FALSE}
+
+
+for (region in region_list) {      #Loop that goes through each region in subset matrix defined above
+  #make lm for each region and each variable in normals list, save p-value
+  model <- lm.beta(lm(slopes[,region] ~ slopes$Age ))
+  results[region, "slope_p"] <- summary(model)$coefficients[2,5]
+  results[region, "slope_beta"] <- summary(model)$coefficients[2,2]
+
+  #make lm for each region and each variable in combined normals pcad list, save p-value
+  model <- lm.beta(lm(slopes_m[,region] ~ slopes_m$Age))
+  results_m[region, "slope_p"] <- summary(model)$coefficients[2,5]
+  results_m[region, "slope_beta"] <- summary(model)$coefficients[2,2]
+  
+}
+  
+
+#Once done finding all p-values, do multiple comparisons correction
+  results[,"slope_p"] <- p.adjust((results[,"slope_p"]), method = mc)
+  results_m[,"slope_p"] <- p.adjust((results_m[,"slope_p"]), method = mc)
+
+
+print("Normal Aging Cohort Results")
+for (region in region_list){
+  if ( results[region,"slope_p"]>0.05){
+    #using the corrected p-values, print the significant relationships and summary data showing direction
+    print(paste("Slope LM", region, round(results[region,"slope_p"], digits = 5), round(results[region,"slope_beta"], digits = 3)))
+
+  }
+}
+
+cat("\n")
+print("Combined PCAD and Normal Aging Cohort Results")
+for (region in region_list){
+  if ( results_m[region,"slope_p"]>0.05){
+    #using the corrected p-values, print the significant relationships and summary data showing direction
+    #print(paste("Slope LM", region, round(results_m[region,"slope_p"], digits = 3), round(results_m[region,"slope_beta"], digits = 3)))
+
+  }
+}
+
+```
+
+
+
+```{r Spatial Correlation of Myelin maps, echo=FALSE}
+
+#separate out thicknesses
+thicknesses <- results[grepl("thick", row.names(results)),]
+thicknesses <- thicknesses[grepl(("bankssts|caudalanteriorcingulate|caudalmiddlefrontal|cuneus|entorhinal|frontalpole|fusiform|inferiorparietal|inferiortemporal|insula|isthmuscingulate|lateraloccipital|lateralorbitofrontal|lingual|medialorbitofrontal|middletemporal|paracentral|parahippocampal|parsopercularis|parsorbitalis|parstriangularis|pericalcarine|postcentral|posteriorcingulate|precentral|precuneus|rostralanteriorcingulate|rostralmiddlefrontal|superiorfrontal|superiorparietal|superiortemporal|supramarginal|temporalpole|transversetemporal"), row.names(thicknesses), ignore.case = T),]
+
+#remove "thickness" from row names
+row.names(thicknesses) <- sub("_thickness", "", row.names(thicknesses))
+
+#separate out volumes
+volumes <- results[grepl(("bankssts_volume|caudalanteriorcingulate_volume|caudalmiddlefrontal_volume|cuneus_volume|entorhinal_volume|frontalpole_volume|fusiform_volume|inferiorparietal_volume|inferiortemporal_volume|insula_volume|isthmuscingulate_volume|lateraloccipital_volume|lateralorbitofrontal_volume|lingual_volume|medialorbitofrontal_volume|middletemporal_volume|paracentral_volume|parahippocampal_volume|parsopercularis_volume|parsorbitalis_volume|parstriangularis_volume|pericalcarine_volume|postcentral_volume|posteriorcingulate_volume|precentral_volume|precuneus_volume|rostralanteriorcingulate_volume|rostralmiddlefrontal_volume|superiorfrontal_volume|superiorparietal_volume|superiortemporal_volume|supramarginal_volume|temporalpole_volume|transversetemporal_volume"), row.names(results), ignore.case = T),]
+
+#remove 'volume' from rownames
+row.names(volumes) <- sub("_volume", "", row.names(volumes))
+
+#reorder list of volumes and thicknesses to match the order in myelin map
+thicknesses <- thicknesses[row.names(myelin),]
+volumes <- volumes[row.names(myelin),]
+
+#make dataframes to hold correlation results
+myelin_results <- data.frame()
+
+
+
+
+#Spearman rank correlations of each beta pattern with myelin map
+  test <- cor.test(as.numeric(myelin$myelin),  as.numeric(volumes[,"Age_beta"]), method = "spearman")
+  myelin_results["Agevolume","pVal"] <- test$p.value
+  myelin_results["Agevolume","cor"] <- test$estimate
+ 
+  test <- cor.test(as.numeric(myelin$myelin),  as.numeric(thicknesses[,"Age_beta"]), method = "spearman")
+  myelin_results["Agethickness","pVal"] <- test$p.value
+  myelin_results["Agethickness","cor"] <- test$estimate
+
+   
+  test <- cor.test(as.numeric(myelin$myelin),  as.numeric(volumes[,"slope_beta"]), method = "spearman")
+  myelin_results["Slopevolume","pVal"] <- test$p.value
+  myelin_results["Slopevolume","cor"] <- test$estimate
+ 
+
+  test <- cor.test(as.numeric(myelin$myelin),  as.numeric(thicknesses[,"slope_beta"]), method = "spearman")
+  myelin_results["Slopethickness","pVal"] <- test$p.value
+  myelin_results["Slopethickness","cor"] <- test$estimate
+
+#Once done finding all p-values, do multiple comparisons correction
+  myelin_results[,"pVal"] <- p.adjust((myelin_results[,"pVal"]), method = mc)
+
+  
+#print results
+myelin_results
+
+```
+
+
+
+```{r LM of Amyloid status and Age on volumes/thicknesses, echo=TRUE}
+
+#model regions by age, AD status, apoe, sex, age*AD, and sex*AD
+for (region in region_list){ #for each region
+      model <- lm.beta(lm(merged_new_60[,region] ~ merged_new_60$Age + factor(merged_new_60$AD_status)  +  merged_new_60$Age*factor(merged_new_60$AD_status) ))
+
+      results[region, "AD_age_p"] <- summary(model)$coefficients[2,5]
+      results[region, "AD_amyloid_p"] <- summary(model)$coefficients[3,5]
+      results[region, "AD_ageamyloid_p"] <- summary(model)$coefficients[4,5]
+      results[region, "AD_amyloid_rsqr"] <- rsq.partial(model)$partial.rsq[2]
+      results[region, "AD_ageamyloid_rsqr"] <- rsq.partial(model)$partial.rsq[3]
+
+      mean_neg <- mean(merged_new_60[merged_new_60$AD_status==0,region]) 
+      mean_pos <- mean(merged_new_60[merged_new_60$AD_status==1,region]) 
+      results[region, "amy_percent_dif"] <-round(((mean_neg-mean_pos)/ (mean_neg+mean_pos)*100),2)
+      results[region, "amy_effectsize_d"] <-round(((mean_neg-mean_pos)/ sd(merged_new_60[,region])),4)
+
+}
+
+
+#Once done finding all p-values, do multiple comparisons correction
+  results[,"AD_age_p"] <- p.adjust((results[,"AD_age_p"]), method = mc)
+  results[,"AD_amyloid_p"] <- p.adjust((results[,"AD_amyloid_p"]), method = mc)
+  results[,"AD_ageamyloid_p"] <- p.adjust((results[,"AD_ageamyloid_p"]), method = mc)
+
+
+summary(results$AD_amyloid_rsqr)
+summary(results$AD_ageamyloid_rsqr)
+#gpower max = 0.67 power (1-B), min is 0.05; median is 0.09 for amy, 0.1 for age*amy
+summary((results$AD_amyloid_rsqr/(1-results$AD_amyloid_rsqr)))
+summary((results$AD_ageamyloid_rsqr/(1-results$AD_ageamyloid_rsqr)))
+
+summary(results$amy_percent_dif)
+summary(results$amy_effectsize_d)
+
+
+
+
+```
+
+
+
+
+
+
+```{r LM of Continuous Amyloid and Age on volumes/thicknesses, eval=FALSE, warning=FALSE, include=FALSE}
+
+
+#model regions by age, AD status, apoe, sex, age*AD, and sex*AD
+for (region in region_list){ #for each region
+      #Correlate z-score and age effect
+      model <- lm.beta(lm(merged_new_60[,region] ~ merged_new_60$Age + (merged_new_60$Cent_fSUVR_rsf_TOT_CORTMEAN)  +  merged_new_60$Age*(merged_new_60$Cent_fSUVR_rsf_TOT_CORTMEAN) ))
+      
+      results[region, "AD_age_p"] <- summary(model)$coefficients[2,5]
+      results[region, "AD_amyloid_p"] <- summary(model)$coefficients[3,5]
+      results[region, "AD_ageamyloid_p"] <- summary(model)$coefficients[4,5]
+}
+
+
+#Once done finding all p-values, do multiple comparisons correction
+  results[,"AD_age_p"] <- p.adjust((results[,"AD_age_p"]), method = mc)
+  results[,"AD_amyloid_p"] <- p.adjust((results[,"AD_amyloid_p"]), method = mc)
+  results[,"AD_ageamyloid_p"] <- p.adjust((results[,"AD_ageamyloid_p"]), method = mc)
+
+
+print("amyloid (continuous) Results")
+for (region in region_list){
+  if ( results[region,"AD_amyloid_p"]<0.05 | results[region,"AD_ageamyloid_p"]<0.05){
+    #using the corrected p-values, print the significant relationships and summary data showing direction
+    print(paste("Amyloid", region, round(results[region,"AD_amyloid_p"], digits = 3), round(results[region,"AD_ageamyloid_p"], digits = 3)))
+    plot <- ggplot(merged_new_60, aes(y=merged_new_60[,region], x=Age, color = AD_status, group=(AD_status))) + geom_point() + geom_smooth(method="lm") + ggtitle(paste("Amyloid", region, round(results[region,"AD_amyloid_p"], digits = 3), round(results[region,"AD_ageamyloid_p"], digits = 3)))
+    print(plot)
+  }
+
+}
+
+
+```
+
+
+Show that DIAN non-carriers aren't inherently different from OASIS
+```{r DIAN vs OASIS}
+normals_CohortOverlap <- normals[normals$Age<59 & normals$Age>42,] #PCAD cohort starts over age 60
+tapply(normals_CohortOverlap$Age, normals_CohortOverlap$source, summary)
+table(normals_CohortOverlap$source)
+
+
+for (region in region_list){
+  #make lm for each region and each variable in normals_CohortOverlap list, save p-value
+  model <- lm.beta(lm(normals_CohortOverlap[,region] ~ normals_CohortOverlap$source ))
+  results[region, "source"] <- summary(model)$coefficients[2,5]
+}
+  
+
+#for each variable, once done finding all p-values, do multiple comparisons correction
+  results[,"source"] <- p.adjust((results[,"source"]), method = mc)
+
+print("Differences by Cohort")
+for (region in region_list){
+  if ( results[region,"source"]<0.05){
+    #using the corrected p-values, print the significant relationships and summary data showing direction
+    print(paste("source", region))
+    #print(format(round(summary(lm.beta(lm(normals[,region] ~ normals[,"source"] )))$coefficients[2,2], 3), nsmall=3)) # print standardized coefficients
+    print(format(round(results[region,"source"],4), nsmall=3))
+    #print(tapply( as.vector(normals[,region]), normals[,"source"], summary))
+    }
+}
+
+```
+
+
+```{r Organize Results and Save, include=FALSE, echo=FALSE, warning=FALSE }
+
+#Sort out results for graphs and CSV
+
+
+#separate results by region type
+thicknesses <- results[grepl(("bankssts_thickness|caudalanteriorcingulate_thickness|caudalmiddlefrontal_thickness|cuneus_thickness|entorhinal_thickness|frontalpole_thickness|fusiform_thickness|inferiorparietal_thickness|inferiortemporal_thickness|insula_thickness|isthmuscingulate_thickness|lateraloccipital_thickness|lateralorbitofrontal_thickness|lingual_thickness|medialorbitofrontal_thickness|middletemporal_thickness|paracentral_thickness|parahippocampal_thickness|parsopercularis_thickness|parsorbitalis_thickness|parstriangularis_thickness|pericalcarine_thickness|postcentral_thickness|posteriorcingulate_thickness|precentral_thickness|precuneus_thickness|rostralanteriorcingulate_thickness|rostralmiddlefrontal_thickness|superiorfrontal_thickness|superiorparietal_thickness|superiortemporal_thickness|supramarginal_thickness|temporalpole_thickness|transversetemporal_thickness"), row.names(results), ignore.case = T),]
+
+volumes <- results[grepl(("bankssts_volume|caudalanteriorcingulate_volume|caudalmiddlefrontal_volume|cuneus_volume|entorhinal_volume|frontalpole_volume|fusiform_volume|inferiorparietal_volume|inferiortemporal_volume|insula_volume|isthmuscingulate_volume|lateraloccipital_volume|lateralorbitofrontal_volume|lingual_volume|medialorbitofrontal_volume|middletemporal_volume|paracentral_volume|parahippocampal_volume|parsopercularis_volume|parsorbitalis_volume|parstriangularis_volume|pericalcarine_volume|postcentral_volume|posteriorcingulate_volume|precentral_volume|precuneus_volume|rostralanteriorcingulate_volume|rostralmiddlefrontal_volume|superiorfrontal_volume|superiorparietal_volume|superiortemporal_volume|supramarginal_volume|temporalpole_volume|transversetemporal_volume"), row.names(results), ignore.case = T),]
+
+subcort <- results[grepl(("Thalamus.Proper_volume|Lateral.Ventricle_volume|Hippocampus_volume|Putamen_volume|Amygdala_volume|VentralDC_volume|Pallidum_volume|Caudate_volume"),
+                         row.names(results), ignore.case = T),]
+
+other_regions <- results[ !(row.names(results) %in% c(row.names(thicknesses), row.names(volumes), row.names(subcort))),]
+
+
+#Alphabetize 
+thicknesses <- thicknesses[sort(row.names(thicknesses)),]
+volumes <- volumes[sort(row.names(volumes)),]
+subcort <- subcort[sort(row.names(subcort)),]
+other_regions <- other_regions[sort(row.names(other_regions)),]
+
+#add marker of region type
+thicknesses$region_type <- "T"
+volumes$region_type <- "CV"
+subcort$region_type <- "SV"
+other_regions$region_type <- "NP"
+
+#recombine results now that they're in the order I want
+results <- rbind(thicknesses, volumes, subcort, other_regions)
+
+
+
+#### WRITE TO CSV
+
+write.table(file=paste("data-clean/Aging_analyses_results_", Sys.Date(), ".csv", sep=""),as.matrix(results),col.names=TRUE, row.names=T,sep=",",dec=".") 
+write.table(file=paste("data-clean/Aging_analyses_results-merged_cohort_", Sys.Date(), ".csv", sep=""),as.matrix(results_m),col.names=TRUE, row.names=T,sep=",",dec=".") 
+
+
+#change very small p-values
+results2 <- as.data.frame(results[,c("Sex", "apoe4", "mmse", "Race_binary", "Education", "source", "Age_beta", "Age_p","slope_beta", "slope_p", "AD_age_p", "AD_amyloid_p", "AD_ageamyloid_p")])
+
+for (i in c("Age_beta", "slope_beta")){
+  results2[i] <- round(results[i], digits = 3)
+}
+
+for (i in c("Sex", "apoe4", "mmse", "Race_binary", "Education", "source", "Age_p", "slope_p", "AD_age_p", "AD_amyloid_p", "AD_ageamyloid_p")){
+    for (j in 1:length(results2[,i])) {
+      if (results2[j,i] >=0.01) {results2[j,i] <- format(round(results[j,i], digits = 2), nsmall=2)}
+      else if (results2[j,i]<0.01 & results2[j,i]>=0.001 ){results2[j,i] <- round(results[j,i], digits = 3)}
+      else if (results2[j,i]<0.001){results2[j,i] <- "<0.001" }
+    }
+}
+  
+write.csv(file=paste("data-clean/Aging_analyses_Adjusted_results_", Sys.Date(), ".csv", sep=""),results2,col.names=TRUE, row.names=T,sep=",",dec=".") 
+
+```
+
+
+
+
