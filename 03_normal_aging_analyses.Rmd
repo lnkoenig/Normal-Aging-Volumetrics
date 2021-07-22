@@ -250,9 +250,6 @@ for (var in demographics){
   #for each variable, once done finding all p-values, do multiple comparisons correction
   results[,var] <- p.adjust((results[,var]), method = mc)
   results_m[,var] <- p.adjust((results_m[,var]), method = mc)
-
-
-
 }
 
 print("Normal Aging Cohort Results")
@@ -274,9 +271,9 @@ for (var in demographics){
   for (region in region_list){
     if ( results_m[region,var]<0.05){
       #using the corrected p-values, print the significant relationships and summary data showing direction
-      print(paste(var, region, round(results_m[region,var], digits = 3)))
-      print(summary(lm.beta(lm(merged_new[,region] ~ merged_new[,var] )))$coefficients[2,2]) # print standardized coefficients
-      print(tapply( as.vector(merged_new[,region]), merged_new[,var], summary))
+     # print(paste(var, region, round(results_m[region,var], digits = 3)))
+     # print(summary(lm.beta(lm(merged_new[,region] ~ merged_new[,var] )))$coefficients[2,2]) # print standardized coefficients
+     # print(tapply( as.vector(merged_new[,region]), merged_new[,var], summary))
     }
   }
 }
@@ -307,7 +304,7 @@ for (region in region_list){
   results_m[,"Age_p"] <- p.adjust((results_m[,"Age_p"]), method = mc)
 
 
-print("Normal Aging Cohort Results")
+print("Normal Aging Cohort Non-Significant Regions")
 for (region in region_list){
   if ( results[region,"Age_p"]>0.05){
     #using the corrected p-values, print the significant relationships and summary data showing direction
@@ -317,7 +314,7 @@ for (region in region_list){
 }
 
 cat("\n")
-print("Combined PCAD and Normal Aging Cohort Results")
+print("Combined PCAD and Normal Aging Cohort Non-Significant Regions")
 for (region in region_list){
   if ( results_m[region,"Age_p"]>0.05){
     #using the corrected p-values, print the significant relationships and summary data showing direction
@@ -353,7 +350,7 @@ for (region in region_list) {      #Loop that goes through each region in subset
   results_m[,"slope_p"] <- p.adjust((results_m[,"slope_p"]), method = mc)
 
 
-print("Normal Aging Cohort Results")
+print("Normal Aging Cohort Non-Significant Regions")
 for (region in region_list){
   if ( results[region,"slope_p"]>0.05){
     #using the corrected p-values, print the significant relationships and summary data showing direction
@@ -363,7 +360,7 @@ for (region in region_list){
 }
 
 cat("\n")
-print("Combined PCAD and Normal Aging Cohort Results")
+print("Combined PCAD and Normal Aging Cohort Non-Significant Regions")
 for (region in region_list){
   if ( results_m[region,"slope_p"]>0.05){
     #using the corrected p-values, print the significant relationships and summary data showing direction
@@ -577,7 +574,7 @@ results <- rbind(thicknesses, volumes, subcort, other_regions)
 
 #### WRITE TO CSV
 
-write.table(file=paste("data-clean/Aging_analyses_results_", Sys.Date(), ".csv", sep=""),as.matrix(results),col.names=TRUE, row.names=T,sep=",",dec=".") 
+#write.table(file=paste("data-clean/Aging_analyses_results_", Sys.Date(), ".csv", sep=""),as.matrix(results),col.names=TRUE, row.names=T,sep=",",dec=".") 
 write.table(file=paste("data-clean/Aging_analyses_results-merged_cohort_", Sys.Date(), ".csv", sep=""),as.matrix(results_m),col.names=TRUE, row.names=T,sep=",",dec=".") 
 
 
